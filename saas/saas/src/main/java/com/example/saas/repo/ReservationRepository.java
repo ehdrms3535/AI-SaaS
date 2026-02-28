@@ -9,18 +9,18 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID> {
+
     List<Reservation> findByOrganizationIdOrderByStartAtAsc(UUID organizationId);
 
     @Query(value = """
-        SELECT id
+        SELECT *
         FROM reservations
         WHERE organization_id = :orgId
-          AND status IN ('PENDING','CONFIRMED')
           AND start_at < :newEnd
-          AND end_at   > :newStart
+          AND end_at > :newStart
         FOR UPDATE
         """, nativeQuery = true)
-    List<UUID> lockOverlappingReservationIds(
+    List<Reservation> lockOverlapsForUpdate(
             @Param("orgId") UUID orgId,
             @Param("newStart") OffsetDateTime newStart,
             @Param("newEnd") OffsetDateTime newEnd
