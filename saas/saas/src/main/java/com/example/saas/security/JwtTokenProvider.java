@@ -4,6 +4,7 @@ import com.example.saas.common.ApiException;
 import com.example.saas.common.ErrorCode;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,9 +20,13 @@ import java.util.UUID;
 public class JwtTokenProvider {
 
     private final JwtProperties props;
+    private SecretKey key;
 
-    private SecretKey key() {
-        return Keys.hmacShaKeyFor(props.getSecret().getBytes(StandardCharsets.UTF_8));
+    @PostConstruct
+    public void init() {
+        this.key = Keys.hmacShaKeyFor(
+                props.getSecret().getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     public String createAccessToken(UUID userId, String email, UUID orgId) {
@@ -34,9 +39,12 @@ public class JwtTokenProvider {
                 .claim("email", email)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
-                .signWith(key());
+                .signWith(key);
 
-        if (orgId != null) b.claim("org", orgId.toString());
+        if (orgId == null) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+        b.claim("org", orgId.toString());
 
         return b.compact();
     }
@@ -51,22 +59,23 @@ public class JwtTokenProvider {
                 .claim("typ", "refresh")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
-                .signWith(key())
+                .signWith(key)
                 .compact();
     }
 
     public JwtPrincipal parseAccessToken(String token) {
         try {
             Claims c = Jwts.parser()
-                    .verifyWith(key())
+                    .verifyWith(key)
+                    .requireIssuer(props.getIssuer())
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
 
             UUID userId = UUID.fromString(c.getSubject());
             String email = c.get("email", String.class);
-            String org = c.get("org", String.class);
-            UUID orgId = (org == null ? null : UUID.fromString(org));
+            UUID orgId = UUID.fromString(c.get("org", String.class));
+
             return new JwtPrincipal(userId, email, orgId);
 
         } catch (JwtException | IllegalArgumentException e) {
@@ -77,7 +86,7 @@ public class JwtTokenProvider {
     public UUID parseRefreshTokenSubject(String token) {
         try {
             Claims c = Jwts.parser()
-                    .verifyWith(key())
+                    .verifyWith(key)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -93,7 +102,7 @@ public class JwtTokenProvider {
     }
 
     public Instant getExpiration(String token) {
-        Claims c = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
+        Claims c = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
         return c.getExpiration().toInstant();
     }
 }

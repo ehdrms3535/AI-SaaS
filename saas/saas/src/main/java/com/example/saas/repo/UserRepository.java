@@ -1,5 +1,6 @@
-package com.example.saas.user;
+package com.example.saas.repo;
 
+import com.example.saas.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

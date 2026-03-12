@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Reservation Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div>
+            <p class="eyebrow">SaaS</p>
+            <h1>Reservation Console</h1>
+            <p class="sidebar-copy">인증, 고객, 서비스, 예약을 한 화면에서 직접 확인하는 1차 운영 콘솔.</p>
+        </div>
+        <div class="session-card">
+            <div class="session-row">
+                <span>상태</span>
+                <strong id="sessionState">로그아웃</strong>
+            </div>
+            <div class="session-row">
+                <span>사용자</span>
+                <strong id="sessionUser">-</strong>
+            </div>
+            <div class="session-row">
+                <span>조직</span>
+                <strong id="sessionOrg">-</strong>
+            </div>
+            <button id="logoutBtn" class="ghost-btn" type="button">로그아웃</button>
+        </div>
+        <div class="org-card">
+            <div class="list-toolbar">
+                <h4>조직</h4>
+                <button id="refreshOrgsBtn" class="ghost-btn" type="button">새로고침</button>
+            </div>
+            <form id="orgForm" class="compact-form">
+                <label><span>조직 이름</span><input name="name" placeholder="New Studio" required></label>
+                <button type="submit">조직 생성</button>
+            </form>
+            <div id="orgList" class="list"></div>
+        </div>
+    </aside>
+
+    <main class="content">
+        <section class="hero">
+            <div>
+                <p class="eyebrow">Phase 1 UI</p>
+                <h2>백엔드 기능을 바로 검증할 수 있는 운영형 화면</h2>
+                <p class="hero-copy">로그인 후 고객, 서비스, 예약 데이터를 만들고 조회합니다. 현재 화면은 관리자 내부용 콘솔 성격입니다.</p>
+            </div>
+            <div class="hero-badge">
+                <span>API Base</span>
+                <strong id="apiBaseLabel">http://localhost:8081</strong>
+            </div>
+        </section>
+
+        <section class="panel auth-panel">
+            <div class="panel-header">
+                <h3>인증</h3>
+                <p>회원가입과 로그인으로 세션을 만듭니다.</p>
+            </div>
+            <div class="auth-grid">
+                <form id="registerForm" class="card-form">
+                    <h4>회원가입</h4>
+                    <label><span>이름</span><input name="name" placeholder="Kim Admin" required></label>
+                    <label><span>이메일</span><input name="email" type="email" placeholder="admin@test.local" required></label>
+                    <label><span>비밀번호</span><input name="password" type="password" value="1234" required></label>
+                    <button type="submit">회원가입</button>
+                </form>
+                <form id="loginForm" class="card-form">
+                    <h4>로그인</h4>
+                    <label><span>이메일</span><input name="email" type="email" placeholder="admin@test.local" required></label>
+                    <label><span>비밀번호</span><input name="password" type="password" value="1234" required></label>
+                    <button type="submit">로그인</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="panel tabs-panel">
+            <div class="tabs">
+                <button class="tab active" data-tab="customers" type="button">고객</button>
+                <button class="tab" data-tab="services" type="button">서비스</button>
+                <button class="tab" data-tab="reservations" type="button">예약</button>
+                <button class="tab" data-tab="dm" type="button">DM 자동예약</button>
+            </div>
+
+            <div class="tab-content active" data-content="customers">
+                <div class="workspace">
+                    <form id="customerForm" class="card-form">
+                        <h4>고객 생성</h4>
+                        <label><span>이름</span><input name="name" required></label>
+                        <label><span>전화번호</span><input name="phone"></label>
+                        <label><span>이메일</span><input name="email" type="email"></label>
+                        <label><span>메모</span><textarea name="memo" rows="4"></textarea></label>
+                        <button type="submit">고객 저장</button>
+                    </form>
+                    <div class="list-panel">
+                        <div class="list-toolbar">
+                            <h4>고객 목록</h4>
+                            <button id="refreshCustomersBtn" class="ghost-btn" type="button">새로고침</button>
+                        </div>
+                        <div id="customerList" class="list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" data-content="services">
+                <div class="workspace">
+                    <form id="serviceForm" class="card-form">
+                        <h4>서비스 생성</h4>
+                        <label><span>이름</span><input name="name" required></label>
+                        <label><span>소요 시간(분)</span><input name="durationMinutes" type="number" min="1" value="60" required></label>
+                        <label><span>가격</span><input name="price" type="number" min="0" value="30000" required></label>
+                        <label class="checkbox"><input name="active" type="checkbox" checked><span>활성 상태</span></label>
+                        <button type="submit">서비스 저장</button>
+                    </form>
+                    <div class="list-panel">
+                        <div class="list-toolbar">
+                            <h4>서비스 목록</h4>
+                            <button id="refreshServicesBtn" class="ghost-btn" type="button">새로고침</button>
+                        </div>
+                        <div id="serviceList" class="list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" data-content="reservations">
+                <div class="workspace">
+                    <form id="reservationForm" class="card-form">
+                        <h4>예약 생성</h4>
+                        <label><span>고객</span><select name="customerId" id="reservationCustomer" required></select></label>
+                        <label><span>서비스</span><select name="serviceId" id="reservationService"><option value="">선택 안 함</option></select></label>
+                        <label><span>시작 시간(UTC)</span><input name="startAt" type="datetime-local" required></label>
+                        <label><span>종료 시간(UTC)</span><input name="endAt" type="datetime-local" required></label>
+                        <label><span>메모</span><textarea name="notes" rows="4"></textarea></label>
+                        <button type="submit">예약 저장</button>
+                    </form>
+                    <div class="list-panel">
+                        <div class="list-toolbar">
+                            <h4>예약 목록</h4>
+                            <div class="toolbar-actions">
+                                <input id="reservationStartFilter" type="datetime-local" aria-label="예약 시작 필터">
+                                <input id="reservationEndFilter" type="datetime-local" aria-label="예약 종료 필터">
+                                <label class="checkbox compact"><input id="includeCanceled" type="checkbox"><span>취소 포함</span></label>
+                                <button id="refreshReservationsBtn" class="ghost-btn" type="button">새로고침</button>
+                            </div>
+                        </div>
+                        <div id="reservationList" class="list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" data-content="dm">
+                <div class="workspace dm-workspace">
+                    <form id="dmForm" class="card-form">
+                        <h4>DM 자동예약 테스트</h4>
+                        <label><span>고객 힌트</span><input name="customerHint" placeholder="김고객 또는 010-1111-2222"></label>
+                        <label><span>발신자 이름</span><input name="senderName" placeholder="김고객"></label>
+                        <label><span>발신자 전화번호</span><input name="senderPhone" placeholder="010-1111-2222"></label>
+                        <label><span>서비스 힌트</span><input name="serviceHint" placeholder="커트"></label>
+                        <label><span>기본 소요시간(분)</span><input name="durationMinutes" type="number" min="10" value="60"></label>
+                        <label><span>DM 메시지</span><textarea name="message" rows="6" placeholder="김고객 3월 15일 14시 커트 예약하고 싶어요" required></textarea></label>
+                        <button type="submit">DM 자동예약 실행</button>
+                    </form>
+                    <div class="list-panel">
+                        <div class="list-toolbar">
+                            <h4>DM 응답</h4>
+                        </div>
+                        <pre id="dmResult" class="log-view"></pre>
+                    </div>
+                    <div class="list-panel">
+                        <div class="list-toolbar">
+                            <h4>DM Inbox</h4>
+                            <button id="refreshDmMessagesBtn" class="ghost-btn" type="button">새로고침</button>
+                        </div>
+                        <div id="dmMessageList" class="list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel log-panel">
+            <div class="panel-header">
+                <h3>실행 로그</h3>
+                <p>API 요청 결과와 에러를 확인합니다.</p>
+            </div>
+            <pre id="logView" class="log-view"></pre>
+        </section>
+    </main>
+</div>
+
+<dialog id="reservationDialog" class="modal">
+    <form id="reservationEditForm" class="modal-card">
+        <div class="modal-header">
+            <div>
+                <p class="eyebrow">Reservation</p>
+                <h3>예약 수정</h3>
+            </div>
+            <button id="closeReservationDialogBtn" class="ghost-btn" type="button">닫기</button>
+        </div>
+        <input id="editReservationId" name="id" type="hidden">
+        <label><span>고객</span><select name="customerId" id="editReservationCustomer"></select></label>
+        <label><span>서비스</span><select name="serviceId" id="editReservationService"><option value="">선택 안 함</option></select></label>
+        <label><span>시작 시간(UTC)</span><input name="startAt" id="editReservationStartAt" type="datetime-local"></label>
+        <label><span>종료 시간(UTC)</span><input name="endAt" id="editReservationEndAt" type="datetime-local"></label>
+        <label><span>메모</span><textarea name="notes" id="editReservationNotes" rows="4"></textarea></label>
+        <div class="modal-actions">
+            <button type="submit">예약 수정</button>
+            <button id="cancelReservationBtn" class="danger-btn" type="button">예약 취소</button>
+            <button id="restoreReservationBtn" type="button">예약 복구</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="customerDialog" class="modal">
+    <form id="customerEditForm" class="modal-card">
+        <div class="modal-header">
+            <div>
+                <p class="eyebrow">Customer</p>
+                <h3>고객 수정</h3>
+            </div>
+            <button id="closeCustomerDialogBtn" class="ghost-btn" type="button">닫기</button>
+        </div>
+        <input id="editCustomerId" name="id" type="hidden">
+        <label><span>이름</span><input id="editCustomerName" name="name"></label>
+        <label><span>전화번호</span><input id="editCustomerPhone" name="phone"></label>
+        <label><span>이메일</span><input id="editCustomerEmail" name="email" type="email"></label>
+        <label><span>메모</span><textarea id="editCustomerMemo" name="memo" rows="4"></textarea></label>
+        <div class="modal-actions">
+            <button type="submit">고객 수정</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="serviceDialog" class="modal">
+    <form id="serviceEditForm" class="modal-card">
+        <div class="modal-header">
+            <div>
+                <p class="eyebrow">Service</p>
+                <h3>서비스 수정</h3>
+            </div>
+            <button id="closeServiceDialogBtn" class="ghost-btn" type="button">닫기</button>
+        </div>
+        <input id="editServiceId" name="id" type="hidden">
+        <label><span>이름</span><input id="editServiceName" name="name"></label>
+        <label><span>소요 시간(분)</span><input id="editServiceDurationMinutes" name="durationMinutes" type="number" min="1"></label>
+        <label><span>가격</span><input id="editServicePrice" name="price" type="number" min="0"></label>
+        <label class="checkbox"><input id="editServiceActive" name="active" type="checkbox"><span>활성 상태</span></label>
+        <div class="modal-actions">
+            <button type="submit">서비스 수정</button>
+        </div>
+    </form>
+</dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>

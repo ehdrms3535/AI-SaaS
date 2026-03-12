@@ -8,7 +8,9 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "권한이 없습니다."),
     ORG_NOT_SELECTED(HttpStatus.BAD_REQUEST, "ORG_NOT_SELECTED", "조직이 선택되지 않았습니다. X-ORG-ID 헤더를 지정하세요."),
     REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID", "리프레시 토큰이 유효하지 않습니다."),
-    REFRESH_TOKEN_REVOKED(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_REVOKED", "리프레시 토큰이 폐기되었습니다.");
+    REFRESH_TOKEN_REVOKED(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_REVOKED", "리프레시 토큰이 폐기되었습니다."),
+    EMAIL_TAKEN(HttpStatus.BAD_REQUEST, "EMAIL_TAKEN", "이미 사용 중인 이메일입니다."),
+    PLAN_LIMIT_EXCEEDED(HttpStatus.FORBIDDEN, "PLAN_LIMIT_EXCEEDED", "현재 플랜 한도를 초과했습니다.");
 
     public final HttpStatus status;
     public final String error;

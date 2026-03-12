@@ -1,11 +1,15 @@
 package com.example.saas.auth;
 
 import com.example.saas.auth.dto.*;
+import com.example.saas.billing.OrganizationPlan;
 import com.example.saas.common.ApiException;
 import com.example.saas.common.ErrorCode;
+import com.example.saas.org.OrganizationMembershipRepository;
+import com.example.saas.repo.OrganizationRepository;
+import com.example.saas.org.OrganizationMembership;
 import com.example.saas.security.JwtTokenProvider;
-import com.example.saas.user.User;
-import com.example.saas.user.UserRepository;
+import com.example.saas.domain.User;
+import com.example.saas.repo.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,6 +27,8 @@ public class AuthService {
 
     private final UserRepository users;
     private final RefreshTokenRepository refreshTokens;
+    private final OrganizationMembershipRepository memberships; // ✅ 추가
+        private final OrganizationRepository organizations;
     private final PasswordEncoder encoder;
     private final JwtTokenProvider jwt;
 
@@ -35,8 +41,10 @@ public class AuthService {
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        // access: org은 TenantResolver가 memberships에서 결정할 수도 있으니 여기선 null로 발급해도 됨
-        String access = jwt.createAccessToken(u.getId(), u.getEmail(), null);
+        UUID orgId = memberships.findDefaultOrgIdByUserId(u.getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN)); // 멤버십 없음
+
+        String access = jwt.createAccessToken(u.getId(), u.getEmail(), orgId);
 
         String refresh = jwt.createRefreshToken(u.getId());
         Instant refreshExp = jwt.getExpiration(refresh);
@@ -69,14 +77,20 @@ public class AuthService {
         if (rt.getRevokedAt() != null) throw new ApiException(ErrorCode.REFRESH_TOKEN_REVOKED);
         if (rt.getExpiresAt().isBefore(Instant.now())) throw new ApiException(ErrorCode.REFRESH_TOKEN_INVALID);
 
+        // ✅ 교차검증
+        if (!rt.getUserId().equals(userId)) throw new ApiException(ErrorCode.REFRESH_TOKEN_INVALID);
+
         User u = users.findById(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.REFRESH_TOKEN_INVALID));
 
-        String newAccess = jwt.createAccessToken(u.getId(), u.getEmail(), null);
+        UUID orgId = memberships.findDefaultOrgIdByUserId(u.getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.FORBIDDEN));
+
+        String newAccess = jwt.createAccessToken(u.getId(), u.getEmail(), orgId);
 
         return new AuthResponse(
                 newAccess,
-                refresh, // refresh는 그대로 유지(로테이션 원하면 여기서 새로 발급 + 기존 폐기)
+                refresh,
                 new AuthResponse.UserView(u.getId(), u.getEmail(), u.getName())
         );
     }
@@ -90,6 +104,92 @@ public class AuthService {
         refreshTokens.save(rt);
     }
 
+    public AuthResponse.UserView me(UUID userId) {
+        User u = users.findById(userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+        return new AuthResponse.UserView(u.getId(), u.getEmail(), u.getName());
+    }
+
+    @Transactional
+    public AuthResponse switchOrg(UUID userId, UUID newOrgId) {
+        // 멤버십 확인
+        if (!memberships.existsByUserIdAndOrganizationId(userId, newOrgId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+
+        User u = users.findById(userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+
+        String newAccess = jwt.createAccessToken(u.getId(), u.getEmail(), newOrgId);
+
+        // refresh 토큰은 그대로 유지 (선택)
+        return new AuthResponse(
+                newAccess,
+                null, // refresh는 null로
+                new AuthResponse.UserView(u.getId(), u.getEmail(), u.getName())
+        );
+    }
+
+            @Transactional
+            public AuthResponse register(com.example.saas.auth.dto.RegisterRequest req) {
+                // 이메일 중복 체크
+                if (users.findByEmail(req.email()).isPresent()) {
+                    throw new ApiException(ErrorCode.EMAIL_TAKEN);
+                }
+
+                User u = User.builder()
+                        .id(UUID.randomUUID())
+                        .email(req.email())
+                        .passwordHash(encoder.encode(req.password()))
+                        .name(req.name())
+                        .build();
+
+                users.save(u);
+
+                // 기본 Organization 자동 생성
+                                var org = new com.example.saas.domain.Organization();
+                                org.setId(UUID.randomUUID());
+                                String base = req.name().toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+                                org.setSlug(base + "-" + org.getId().toString().substring(0, 8));
+                                // 필수 칼럼(예: name, timezone 등)을 채워 DB 제약 위반 방지
+                                org.setName(req.name());
+                                try {
+                                        org.setTimezone(java.time.ZoneId.systemDefault().toString());
+                                } catch (Exception ignored) {
+                                        org.setTimezone("UTC");
+                                }
+                                org.setPlan(OrganizationPlan.FREE);
+                organizations.save(org);
+
+                // OrganizationMembership 생성 (OWNER)
+                OrganizationMembership m = OrganizationMembership.builder()
+                        .id(UUID.randomUUID())
+                        .organizationId(org.getId())
+                        .userId(u.getId())
+                        .role(OrganizationMembership.OrgRole.OWNER)
+                        .build();
+                memberships.save(m);
+
+                // 토큰 발급
+                String access = jwt.createAccessToken(u.getId(), u.getEmail(), org.getId());
+                String refresh = jwt.createRefreshToken(u.getId());
+
+                var refreshExp = jwt.getExpiration(refresh);
+                RefreshToken rt = RefreshToken.builder()
+                        .id(UUID.randomUUID())
+                        .userId(u.getId())
+                        .tokenHash(sha256(refresh))
+                        .expiresAt(refreshExp)
+                        .createdAt(java.time.Instant.now())
+                        .build();
+                refreshTokens.save(rt);
+
+                return new AuthResponse(
+                        access,
+                        refresh,
+                        new AuthResponse.UserView(u.getId(), u.getEmail(), u.getName())
+                );
+            }
     private static String sha256(String s) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

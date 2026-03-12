@@ -1,5 +1,6 @@
 package com.example.saas.security;
 
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,14 +24,25 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String p = request.getRequestURI();
-        return p.startsWith("/api/auth/")
-                || p.equals("/ping-db")
-                || p.startsWith("/error");
+        // Only skip auth filter for public auth endpoints (login, refresh, register)
+        return p.equals("/api/auth/login")
+            || p.equals("/api/auth/refresh")
+            || p.equals("/api/auth/register")
+            || p.equals("/")
+            || p.equals("/index.html")
+            || p.equals("/app.css")
+            || p.equals("/app.js")
+            || p.equals("/favicon.ico")
+            || p.equals("/ping-db")
+            || p.startsWith("/error");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
+
+        System.out.println("[REQ] " + req.getMethod() + " " + req.getRequestURI()
+                + " auth=" + req.getHeader("Authorization"));
 
         String header = req.getHeader("Authorization");
 
@@ -50,15 +62,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             chain.doFilter(req, res);
 
-        } catch (Exception e) {
-            // ✅ 토큰이 "있는데" 잘못된 경우만 401
+        } catch (JwtException | IllegalArgumentException e) {
+            System.out.println("[JWT_FAIL] " + e.getClass().getSimpleName() + " :: " + e.getMessage());
             SecurityContextHolder.clearContext();
             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             res.setCharacterEncoding(StandardCharsets.UTF_8.name());
             res.setContentType("application/json");
             res.getWriter().write("""
-                {"error":"UNAUTHORIZED","message":"Invalid or expired token"}
-            """);
+        {"error":"UNAUTHORIZED","message":"Invalid or expired token"}
+    """);
         }
     }
 }

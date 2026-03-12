@@ -3,6 +3,10 @@ package com.example.saas.api.error;
 import com.example.saas.common.ApiException;
 import com.example.saas.common.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.validation.FieldError;
 import org.springframework.http.*;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -29,6 +33,33 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException e, HttpServletRequest req) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(baseBody(
                 "BAD_REQUEST",
+                e.getMessage(),
+                req.getRequestURI()
+        ));
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequestException(BadRequestException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(baseBody(
+                e.getError(),
+                e.getMessage(),
+                req.getRequestURI()
+        ));
+    }
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(NotFoundException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(baseBody(
+                e.getError(),
+                e.getMessage(),
+                req.getRequestURI()
+        ));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleConflictException(ConflictException e, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(baseBody(
+                e.getError(),
                 e.getMessage(),
                 req.getRequestURI()
         ));
@@ -61,6 +92,66 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(baseBody(
                 "FORBIDDEN",
                 "권한이 없습니다.",
+                req.getRequestURI()
+        ));
+    }
+
+    // ✅ 추가: 요청 바디 파싱 실패 (잘못된 JSON 등)
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException e, HttpServletRequest req) {
+        String msg = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(baseBody(
+                "BAD_REQUEST",
+                msg,
+                req.getRequestURI()
+        ));
+    }
+
+    // ✅ 추가: @Valid 유효성 검사 실패 처리
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException e, HttpServletRequest req) {
+        List<String> errors = new ArrayList<>();
+        for (FieldError fe : e.getBindingResult().getFieldErrors()) {
+            errors.add(fe.getField() + ": " + fe.getDefaultMessage());
+        }
+        String message = String.join("; ", errors);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(baseBody(
+                "VALIDATION_FAILED",
+                message.isEmpty() ? "유효성 검사 실패" : message,
+                req.getRequestURI()
+        ));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(DataIntegrityViolationException e, HttpServletRequest req) {
+        String message = "요청 데이터가 유효하지 않습니다.";
+        Throwable root = e.getMostSpecificCause();
+        if (root != null && root.getMessage() != null) {
+            String rootMessage = root.getMessage();
+            if (rootMessage.contains("reservations_customer_id_fkey")) {
+                message = "고객을 찾을 수 없습니다.";
+            } else if (rootMessage.contains("reservations_service_id_fkey")) {
+                message = "서비스를 찾을 수 없습니다.";
+            }
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(baseBody(
+                "DATA_INTEGRITY_VIOLATION",
+                message,
+                req.getRequestURI()
+        ));
+    }
+
+    // 개발용: 모든 예외를 잡아 상세한 스택트레이스를 응답에 포함 (운영환경에서는 비활성화 권장)
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleAll(Exception e, HttpServletRequest req) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(e.toString()).append("\n");
+        for (StackTraceElement st : e.getStackTrace()) {
+            sb.append("    at ").append(st.toString()).append("\n");
+        }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(baseBody(
+                "INTERNAL_ERROR",
+                sb.toString(),
                 req.getRequestURI()
         ));
     }

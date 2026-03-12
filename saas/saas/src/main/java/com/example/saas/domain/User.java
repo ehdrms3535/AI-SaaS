@@ -1,4 +1,4 @@
-package com.example.saas.user;
+package com.example.saas.domain;
 
 import jakarta.persistence.*;
 import lombok.*;

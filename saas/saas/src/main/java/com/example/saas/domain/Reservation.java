@@ -3,7 +3,10 @@ package com.example.saas.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -27,8 +30,8 @@ public class Reservation {
     private UUID serviceId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ReservationStatus status = ReservationStatus.PENDING;
+    @Column(name = "status", nullable = false, length = 30)
+    private ReservationStatus status = ReservationStatus.CONFIRMED;;
 
     @Column(name = "start_at", nullable = false)
     private OffsetDateTime startAt;
@@ -37,7 +40,7 @@ public class Reservation {
     private OffsetDateTime endAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(name = "source", nullable = false, length = 30)
     private ReservationSource source = ReservationSource.MANUAL;
 
     @Column(columnDefinition = "text")
@@ -49,10 +52,10 @@ public class Reservation {
     @Column(name = "ai_request_id", columnDefinition = "uuid")
     private UUID aiRequestId;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name="created_at", nullable=false, updatable=false, insertable=false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name="updated_at", nullable=false, insertable=false)
     private OffsetDateTime updatedAt;
 
     @PrePersist
@@ -60,4 +63,9 @@ public class Reservation {
         // DB default(now())가 있으니, null이면 넣어주는 정도로만
         if (this.id == null) this.id = UUID.randomUUID();
     }
+    @Column(name = "canceled_at")
+    private OffsetDateTime canceledAt;
+
+    @Column(name = "canceled_by_user_id")
+    private UUID canceledByUserId;
 }

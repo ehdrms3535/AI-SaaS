@@ -1,5 +1,5 @@
 package com.example.saas.domain;
 
 public enum ReservationSource {
-    MANUAL, AI, IMPORT, API
+    MANUAL, DM, AI, IMPORT, API
 }

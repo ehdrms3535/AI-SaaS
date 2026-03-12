@@ -1,6 +1,8 @@
 HELP.md
 .gradle
 build/
+bin/
+*.jar
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
@@ -35,6 +37,10 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# local env / gradle temp
+.env
+.gradle-tmp/
 
 # application config
 src/main/resources/application.yaml
