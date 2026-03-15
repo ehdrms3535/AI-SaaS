@@ -85,7 +85,6 @@ class DmAutoReservationServiceTest {
         when(customerRepository.findByOrganizationIdOrderByCreatedAtDesc(orgId)).thenReturn(List.of());
         when(customerRepository.searchByOrganizationId(eq(orgId), any())).thenReturn(List.of());
         when(serviceRepository.findByOrganizationIdOrderByCreatedAtDesc(orgId)).thenReturn(List.of(service));
-        when(serviceRepository.searchByOrganizationId(orgId, "커트")).thenReturn(List.of(service));
         when(reservationService.create(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(UUID.randomUUID());
         doAnswer(invocation -> invocation.getArgument(0)).when(customerRepository).save(any(Customer.class));
 
@@ -138,6 +137,24 @@ class DmAutoReservationServiceTest {
 
         assertThat(response.success()).isFalse();
         assertThat(response.reply()).contains("휴무일");
+    }
+
+    @Test
+    void rejectsRequestWhenServiceCannotBeMatched() {
+        Customer customer = customer("김고객", "01011112222");
+        when(customerRepository.findByOrganizationIdOrderByCreatedAtDesc(orgId)).thenReturn(List.of(customer));
+        when(serviceRepository.findByOrganizationIdOrderByCreatedAtDesc(orgId)).thenReturn(List.of(activeService("펌", 90)));
+        when(serviceRepository.searchByOrganizationId(orgId, "커트")).thenReturn(List.of());
+
+        DmReservationResponse response = dmAutoReservationService.reserve(
+                orgId,
+                userId,
+                new DmReservationRequest("2026-03-12 14:00 커트 예약", null, null, "010-1111-2222", "커트", 60)
+        );
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.serviceId()).isNull();
+        assertThat(response.reply()).contains("서비스를 찾지 못했습니다");
     }
 
     @Test

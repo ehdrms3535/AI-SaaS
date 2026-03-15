@@ -39,4 +39,10 @@ public class Organization {
 
     @Column(name = "closed_weekdays", nullable = false)
     private String closedWeekdays;
+
+    @Column(name = "dm_webhook_enabled", nullable = false)
+    private boolean dmWebhookEnabled;
+
+    @Column(name = "dm_webhook_secret")
+    private String dmWebhookSecret;
 }

@@ -10,4 +10,5 @@ import java.util.UUID;
 public interface DmMessageRepository extends JpaRepository<DmMessage, UUID> {
     List<DmMessage> findByOrganizationIdOrderByReceivedAtDesc(UUID organizationId);
     List<DmMessage> findByOrganizationIdAndStatusOrderByReceivedAtDesc(UUID organizationId, DmMessageStatus status);
+    java.util.Optional<DmMessage> findByIdAndOrganizationId(UUID id, UUID organizationId);
 }

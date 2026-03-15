@@ -56,6 +56,7 @@ class ReservationServiceTest {
     private UUID orgId;
     private UUID reservationId;
     private UUID customerId;
+    private UUID serviceId;
     private UUID userId;
     private JwtPrincipal principal;
 
@@ -74,6 +75,7 @@ class ReservationServiceTest {
         orgId = UUID.randomUUID();
         reservationId = UUID.randomUUID();
         customerId = UUID.randomUUID();
+        serviceId = UUID.randomUUID();
         userId = UUID.randomUUID();
         principal = new JwtPrincipal(userId, "tester@test.local", orgId);
     }
@@ -83,10 +85,11 @@ class ReservationServiceTest {
         Reservation reservation = activeReservation();
         OffsetDateTime newStart = OffsetDateTime.parse("2026-03-11T10:00:00Z");
         OffsetDateTime newEnd = OffsetDateTime.parse("2026-03-11T11:00:00Z");
-        ReservationUpdateRequest req = new ReservationUpdateRequest(customerId, null, newStart, newEnd, "updated");
+        ReservationUpdateRequest req = new ReservationUpdateRequest(customerId, serviceId, newStart, newEnd, "updated");
 
         when(reservationRepository.findByIdForUpdate(reservationId, orgId)).thenReturn(Optional.of(reservation));
         when(customerLookupRepository.existsByIdAndOrganizationId(customerId, orgId)).thenReturn(true);
+        when(serviceLookupRepository.existsByIdAndOrganizationId(serviceId, orgId)).thenReturn(true);
         when(reservationRepository.existsOverlapForUpdate(orgId, reservationId, newStart, newEnd)).thenReturn(Optional.empty());
 
         ReservationResponse response = reservationService.update(reservationId, req, principal);
@@ -133,6 +136,7 @@ class ReservationServiceTest {
 
         when(reservationRepository.findByIdForUpdate(reservationId, orgId)).thenReturn(Optional.of(reservation));
         when(customerLookupRepository.existsByIdAndOrganizationId(customerId, orgId)).thenReturn(true);
+        when(serviceLookupRepository.existsByIdAndOrganizationId(serviceId, orgId)).thenReturn(true);
         when(reservationRepository.existsOverlapForUpdate(orgId, reservationId, reservation.getStartAt(), reservation.getEndAt()))
                 .thenReturn(Optional.empty());
 
@@ -162,6 +166,7 @@ class ReservationServiceTest {
         reservation.setCanceledAt(OffsetDateTime.parse("2026-03-11T09:30:00Z"));
         when(reservationRepository.findByIdForUpdate(reservationId, orgId)).thenReturn(Optional.of(reservation));
         when(customerLookupRepository.existsByIdAndOrganizationId(customerId, orgId)).thenReturn(true);
+        when(serviceLookupRepository.existsByIdAndOrganizationId(serviceId, orgId)).thenReturn(true);
         when(reservationRepository.existsOverlapForUpdate(orgId, reservationId, reservation.getStartAt(), reservation.getEndAt()))
                 .thenReturn(Optional.of(1));
 
@@ -177,7 +182,7 @@ class ReservationServiceTest {
         assertThatThrownBy(() -> reservationService.create(
                 orgId,
                 customerId,
-                null,
+                serviceId,
                 OffsetDateTime.parse("2026-03-11T10:00:00Z"),
                 OffsetDateTime.parse("2026-03-11T11:00:00Z"),
                 userId,
@@ -193,6 +198,7 @@ class ReservationServiceTest {
         reservation.setId(reservationId);
         reservation.setOrganizationId(orgId);
         reservation.setCustomerId(customerId);
+        reservation.setServiceId(serviceId);
         reservation.setStartAt(OffsetDateTime.parse("2026-03-11T08:00:00Z"));
         reservation.setEndAt(OffsetDateTime.parse("2026-03-11T09:00:00Z"));
         reservation.setNotes("before");

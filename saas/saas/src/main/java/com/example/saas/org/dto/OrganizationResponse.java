@@ -12,5 +12,6 @@ public record OrganizationResponse(
         String timezone,
         OrganizationPlan plan,
         PlanSnapshot usage,
-        OrganizationScheduleResponse schedule
+        OrganizationScheduleResponse schedule,
+        OrganizationWebhookResponse webhook
 ) { }

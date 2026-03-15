@@ -5,9 +5,11 @@ const state = {
   user: JSON.parse(localStorage.getItem("saas.user") || "null"),
   customers: [],
   orgs: [],
+  channels: [],
   services: [],
   reservations: [],
   dmMessages: [],
+  instagramConnectPoller: null,
 };
 
 const el = {
@@ -17,6 +19,7 @@ const el = {
   apiBaseLabel: document.getElementById("apiBaseLabel"),
   logView: document.getElementById("logView"),
   orgList: document.getElementById("orgList"),
+  channelList: document.getElementById("channelList"),
   customerList: document.getElementById("customerList"),
   serviceList: document.getElementById("serviceList"),
   reservationList: document.getElementById("reservationList"),
@@ -53,11 +56,30 @@ const el = {
   editServiceActive: document.getElementById("editServiceActive"),
   closeServiceDialogBtn: document.getElementById("closeServiceDialogBtn"),
   refreshOrgsBtn: document.getElementById("refreshOrgsBtn"),
+  refreshChannelsBtn: document.getElementById("refreshChannelsBtn"),
+  startInstagramConnectBtn: document.getElementById("startInstagramConnectBtn"),
   orgForm: document.getElementById("orgForm"),
   dmForm: document.getElementById("dmForm"),
   dmResult: document.getElementById("dmResult"),
   dmMessageList: document.getElementById("dmMessageList"),
   refreshDmMessagesBtn: document.getElementById("refreshDmMessagesBtn"),
+  dmStatusFilter: document.getElementById("dmStatusFilter"),
+  dmMessageDialog: document.getElementById("dmMessageDialog"),
+  dmMessageConfirmForm: document.getElementById("dmMessageConfirmForm"),
+  dmMessageId: document.getElementById("dmMessageId"),
+  dmMessageText: document.getElementById("dmMessageText"),
+  dmMessageIntent: document.getElementById("dmMessageIntent"),
+  dmMessageReservation: document.getElementById("dmMessageReservation"),
+  dmMessageCustomer: document.getElementById("dmMessageCustomer"),
+  dmMessageService: document.getElementById("dmMessageService"),
+  dmMessageStartAt: document.getElementById("dmMessageStartAt"),
+  dmMessageEndAt: document.getElementById("dmMessageEndAt"),
+  dmSuggestedTimes: document.getElementById("dmSuggestedTimes"),
+  dmMessageNotes: document.getElementById("dmMessageNotes"),
+  dmConfirmBookBtn: document.getElementById("dmConfirmBookBtn"),
+  dmConfirmUpdateBtn: document.getElementById("dmConfirmUpdateBtn"),
+  dmConfirmCancelBtn: document.getElementById("dmConfirmCancelBtn"),
+  closeDmMessageDialogBtn: document.getElementById("closeDmMessageDialogBtn"),
 };
 
 function log(message, data) {
@@ -152,6 +174,7 @@ async function refreshOrgs() {
       <p>${org.timezone}</p>
       <p>영업시간: ${org.schedule?.businessOpenTime || "09:00"} ~ ${org.schedule?.businessCloseTime || "21:00"}</p>
       <p>휴무: ${(org.schedule?.closedWeekdays || []).join(", ") || "-"}</p>
+      <p>웹훅: ${org.webhook?.enabled ? "활성" : "비활성"}</p>
       <div class="plan-metrics">
         <p>고객: ${formatLimit(org.usage?.customerCount, org.usage?.customerLimit)}</p>
         <p>서비스: ${formatLimit(org.usage?.serviceCount, org.usage?.serviceLimit)}</p>
@@ -170,6 +193,14 @@ async function refreshOrgs() {
           <span>휴무일</span>
           <input type="text" value="${(org.schedule?.closedWeekdays || []).join(",")}" data-closed-days="${org.id}" placeholder="예: SUNDAY,MONDAY">
         </label>
+        <label class="inline-field">
+          <span>Webhook Secret</span>
+          <input type="text" value="${org.webhook?.secret || ""}" data-webhook-secret="${org.id}" placeholder="secret">
+        </label>
+        <label class="checkbox compact">
+          <input type="checkbox" ${org.webhook?.enabled ? "checked" : ""} data-webhook-enabled="${org.id}">
+          <span>Webhook 활성</span>
+        </label>
         <p class="field-help">휴무일은 영문 대문자 요일을 콤마로 구분해서 입력합니다.</p>
       </div>
       <div class="list-item-actions">
@@ -180,6 +211,7 @@ async function refreshOrgs() {
         </select>
         <button type="button" class="ghost-btn" data-action="update-plan" data-id="${org.id}">플랜 변경</button>
         <button type="button" class="ghost-btn" data-action="update-schedule" data-id="${org.id}">영업시간 저장</button>
+        <button type="button" class="ghost-btn" data-action="update-webhook" data-id="${org.id}">Webhook 저장</button>
         <button type="button" data-action="switch-org" data-id="${org.id}" ${org.id === currentOrgId ? "disabled" : ""}>
           ${org.id === currentOrgId ? "현재 조직" : "전환"}
         </button>
@@ -209,6 +241,29 @@ async function refreshCustomers() {
   ).join("");
   el.reservationCustomer.innerHTML = customerOptions;
   el.editReservationCustomer.innerHTML = customerOptions;
+  el.dmMessageCustomer.innerHTML = customerOptions;
+}
+
+async function refreshChannels() {
+  const channels = await api("/api/channels");
+  state.channels = channels;
+  el.channelList.innerHTML = channels.map((channel) => `
+    <article class="list-item">
+      <strong>${channel.provider}</strong>
+      <p>상태: ${channel.status}</p>
+      <p>계정명: ${channel.accountName || "-"}</p>
+      <p>유저명: ${channel.username || "-"}</p>
+      <p>외부 계정 ID: ${channel.externalAccountId || "-"}</p>
+      <p>Webhook: ${channel.webhookSubscribed ? "연결됨" : "미연결"}</p>
+      <p>연결 시각: ${channel.connectedAt || "-"}</p>
+      <div class="list-item-actions">
+        ${channel.provider === "INSTAGRAM" && channel.status === "ACTIVE"
+          ? `<button type="button" class="ghost-btn" data-action="sync-instagram-channel" data-id="${channel.id}">Instagram 동기화</button>`
+          : ""}
+        <button type="button" class="ghost-btn" data-action="disconnect-channel" data-id="${channel.id}" ${channel.status === "DISCONNECTED" ? "disabled" : ""}>연결 해제</button>
+      </div>
+    </article>
+  `).join("") || `<article class="list-item"><p>연결된 채널이 없습니다.</p></article>`;
 }
 
 async function refreshServices() {
@@ -229,8 +284,9 @@ async function refreshServices() {
   const serviceOptions = services.map((service) =>
     `<option value="${service.id}">${service.name} / ${service.durationMinutes}분</option>`
   ).join("");
-  el.reservationService.innerHTML = `<option value="">선택 안 함</option>${serviceOptions}`;
-  el.editReservationService.innerHTML = `<option value="">선택 안 함</option>${serviceOptions}`;
+  el.reservationService.innerHTML = serviceOptions;
+  el.editReservationService.innerHTML = serviceOptions;
+  el.dmMessageService.innerHTML = serviceOptions;
 }
 
 async function refreshReservations() {
@@ -265,18 +321,25 @@ async function refreshReservations() {
 }
 
 async function refreshDmMessages() {
-  const messages = await api("/api/dm/messages");
+  const query = el.dmStatusFilter.value ? `?status=${encodeURIComponent(el.dmStatusFilter.value)}` : "";
+  const messages = await api(`/api/dm/messages${query}`);
   state.dmMessages = messages;
   el.dmMessageList.innerHTML = messages.map((message) => `
     <article class="list-item">
       <strong>${message.status}</strong>
+      <p>의도: ${message.intent || "BOOK"}</p>
       <p>채널: ${message.channel}</p>
       <p>발신자: ${message.senderName || "-"} / ${message.senderPhone || "-"}</p>
       <p>고객ID: ${message.customerId || "-"}</p>
       <p>예약ID: ${message.reservationId || "-"}</p>
       <p>메시지: ${message.messageText}</p>
       <p>처리결과: ${message.failureReason || "예약 완료"}</p>
+      <p>자동응답: ${message.replyText || "-"}</p>
+      <p>파싱 시간: ${message.parsedStartAt || "-"} ~ ${message.parsedEndAt || "-"}</p>
       <p>수신시각: ${message.receivedAt || "-"}</p>
+      <div class="list-item-actions">
+        <button type="button" data-action="open-dm-message" data-id="${message.id}">상세</button>
+      </div>
     </article>
   `).join("") || `<article class="list-item"><p>DM 메시지가 없습니다.</p></article>`;
 }
@@ -285,7 +348,7 @@ async function bootstrapData() {
   if (!state.token) {
     return;
   }
-  await Promise.all([refreshOrgs(), refreshCustomers(), refreshServices(), refreshReservations(), refreshDmMessages()]);
+  await Promise.all([refreshOrgs(), refreshChannels(), refreshCustomers(), refreshServices(), refreshReservations(), refreshDmMessages()]);
 }
 
 function saveSession(authResponse) {
@@ -309,6 +372,7 @@ function clearSession() {
   localStorage.removeItem("saas.user");
   renderSession();
   el.orgList.innerHTML = "";
+  el.channelList.innerHTML = "";
 }
 
 async function refreshAccessToken() {
@@ -384,6 +448,48 @@ function findServiceName(serviceId) {
   return service ? `${service.name} / ${service.durationMinutes}분` : serviceId;
 }
 
+function normalizeText(value) {
+  if (!value) {
+    return "";
+  }
+  return value.toLowerCase().replace(/\s+/g, "").replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function findServiceIdByHint(serviceHint) {
+  const normalizedHint = normalizeText(serviceHint);
+  if (!normalizedHint) {
+    return "";
+  }
+  const match = state.services
+    .filter((service) => service.active)
+    .sort((left, right) => normalizeText(right.name).length - normalizeText(left.name).length)
+    .find((service) => {
+      const normalizedName = normalizeText(service.name);
+      return normalizedHint.includes(normalizedName) || normalizedName.includes(normalizedHint);
+    });
+  return match ? match.id : "";
+}
+
+function getServiceDuration(serviceId) {
+  const service = state.services.find((item) => item.id === serviceId);
+  return service ? Number(service.durationMinutes || 0) : 0;
+}
+
+function syncDmEndAtFromService() {
+  if (!el.dmMessageStartAt.value || !el.dmMessageService.value) {
+    return;
+  }
+  const durationMinutes = getServiceDuration(el.dmMessageService.value);
+  if (!durationMinutes) {
+    return;
+  }
+  const startDate = new Date(el.dmMessageStartAt.value);
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+  const offset = endDate.getTimezoneOffset();
+  const local = new Date(endDate.getTime() - offset * 60000);
+  el.dmMessageEndAt.value = local.toISOString().slice(0, 16);
+}
+
 function openReservationDialog(reservationId) {
   const reservation = state.reservations.find((item) => item.id === reservationId);
   if (!reservation) {
@@ -430,6 +536,39 @@ function openServiceDialog(serviceId) {
   el.serviceDialog.showModal();
 }
 
+function openDmMessageDialog(messageId) {
+  const message = state.dmMessages.find((item) => item.id === messageId);
+  if (!message) {
+    log("DM 상세 열기 실패", { messageId });
+    return;
+  }
+  el.dmMessageId.value = message.id;
+  el.dmMessageText.value = message.messageText || "";
+  el.dmMessageIntent.value = message.intent || "BOOK";
+  el.dmMessageCustomer.value = message.customerId || "";
+  el.dmMessageService.value = findServiceIdByHint(message.serviceHint || message.messageText);
+  el.dmMessageStartAt.value = toLocalInputValue(message.parsedStartAt);
+  el.dmMessageEndAt.value = toLocalInputValue(message.parsedEndAt);
+  if (!el.dmMessageEndAt.value) {
+    syncDmEndAtFromService();
+  }
+  el.dmMessageNotes.value = message.replyText || message.failureReason || "";
+  el.dmSuggestedTimes.innerHTML = "";
+  const reservationOptions = state.reservations
+    .filter((reservation) => !message.customerId || reservation.customerId === message.customerId)
+    .map((reservation) => `<option value="${reservation.id}">${reservation.startAt} / ${findServiceName(reservation.serviceId)}</option>`)
+    .join("");
+  el.dmMessageReservation.innerHTML = `<option value="">예약 선택</option>${reservationOptions}`;
+  const locked = message.status === "RESERVED";
+  el.dmConfirmBookBtn.disabled = locked;
+  el.dmConfirmUpdateBtn.disabled = locked;
+  el.dmConfirmCancelBtn.disabled = locked;
+  el.dmConfirmBookBtn.hidden = (message.intent || "BOOK") !== "BOOK";
+  el.dmConfirmUpdateBtn.hidden = (message.intent || "BOOK") !== "UPDATE";
+  el.dmConfirmCancelBtn.hidden = (message.intent || "BOOK") !== "CANCEL";
+  el.dmMessageDialog.showModal();
+}
+
 async function submitReservationEdit(event) {
   event.preventDefault();
   try {
@@ -438,7 +577,6 @@ async function submitReservationEdit(event) {
     delete payload.id;
     payload.startAt = toIsoLocal(payload.startAt);
     payload.endAt = toIsoLocal(payload.endAt);
-    payload.serviceId = payload.serviceId || null;
     const result = await api(`/api/reservations/${reservationId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -520,6 +658,69 @@ async function submitServiceEdit(event) {
   }
 }
 
+async function submitDmMessageConfirm(event) {
+  event.preventDefault();
+  try {
+    const payload = formToJson(event.target);
+    const messageId = payload.id;
+    delete payload.id;
+    payload.startAt = toIsoLocal(payload.startAt);
+    payload.endAt = toIsoLocal(payload.endAt);
+    const result = await api(`/api/dm/messages/${messageId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    el.dmMessageDialog.close();
+    await Promise.all([refreshReservations(), refreshDmMessages()]);
+    log("DM 수동 예약 확정 성공", result);
+  } catch (error) {
+    log("DM 수동 예약 확정 실패", error);
+  }
+}
+
+async function confirmDmUpdate() {
+  try {
+    const payload = formToJson(el.dmMessageConfirmForm);
+    const reservationId = el.dmMessageReservation.value;
+    if (!reservationId) {
+      throw { error: "RESERVATION_REQUIRED", message: "변경할 예약을 선택해야 합니다." };
+    }
+    const messageId = payload.id;
+    payload.reservationId = reservationId;
+    delete payload.id;
+    payload.startAt = toIsoLocal(payload.startAt);
+    payload.endAt = toIsoLocal(payload.endAt);
+    const result = await api(`/api/dm/messages/${messageId}/update`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    el.dmMessageDialog.close();
+    await Promise.all([refreshReservations(), refreshDmMessages()]);
+    log("DM 예약 변경 확정 성공", result);
+  } catch (error) {
+    log("DM 예약 변경 확정 실패", error);
+  }
+}
+
+async function confirmDmCancel() {
+  try {
+    const messageId = el.dmMessageId.value;
+    const reservationId = el.dmMessageReservation.value;
+    if (!reservationId) {
+      throw { error: "RESERVATION_REQUIRED", message: "취소할 예약을 선택해야 합니다." };
+    }
+    const result = await api(`/api/dm/messages/${messageId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reservationId }),
+    });
+    el.dmMessageDialog.close();
+    await Promise.all([refreshReservations(), refreshDmMessages()]);
+    log("DM 예약 취소 확정 성공", result);
+  } catch (error) {
+    log("DM 예약 취소 확정 실패", error);
+  }
+}
+
 async function createOrganization(event) {
   event.preventDefault();
   try {
@@ -597,6 +798,27 @@ async function updateOrganizationSchedule(orgId) {
   }
 }
 
+async function updateOrganizationWebhook(orgId) {
+  const secretInput = el.orgList.querySelector(`[data-webhook-secret="${orgId}"]`);
+  const enabledInput = el.orgList.querySelector(`[data-webhook-enabled="${orgId}"]`);
+  if (!secretInput || !enabledInput) {
+    return;
+  }
+  try {
+    const result = await api(`/api/orgs/${orgId}/webhook`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        enabled: enabledInput.checked,
+        secret: secretInput.value,
+      }),
+    });
+    await refreshOrgs();
+    log("Webhook 설정 저장 성공", result);
+  } catch (error) {
+    log("Webhook 설정 저장 실패", error);
+  }
+}
+
 async function submitDmReservation(event) {
   event.preventDefault();
   try {
@@ -612,6 +834,70 @@ async function submitDmReservation(event) {
   } catch (error) {
     el.dmResult.textContent = JSON.stringify(error, null, 2);
     log("DM 자동예약 처리 실패", error);
+  }
+}
+
+async function startInstagramConnect() {
+  try {
+    const result = await api("/api/channels/instagram/connect/start", {
+      method: "POST",
+    });
+    await refreshChannels();
+    log("Instagram 연결 시작", result);
+    if (result.authorizationUrl) {
+      window.open(result.authorizationUrl, "_blank", "noopener,noreferrer");
+      beginInstagramConnectPolling();
+    }
+  } catch (error) {
+    log("Instagram 연결 시작 실패", error);
+  }
+}
+
+async function disconnectChannel(channelId) {
+  try {
+    const result = await api(`/api/channels/${channelId}`, {
+      method: "DELETE",
+    });
+    await refreshChannels();
+    log("채널 연결 해제 성공", result);
+  } catch (error) {
+    log("채널 연결 해제 실패", error);
+  }
+}
+
+function beginInstagramConnectPolling() {
+  if (state.instagramConnectPoller) {
+    clearInterval(state.instagramConnectPoller);
+  }
+
+  let attempts = 0;
+  state.instagramConnectPoller = setInterval(async () => {
+    attempts += 1;
+    try {
+      await refreshChannels();
+      const activeInstagram = state.channels.find((channel) => channel.provider === "INSTAGRAM" && channel.status === "ACTIVE");
+      if (activeInstagram || attempts >= 20) {
+        clearInterval(state.instagramConnectPoller);
+        state.instagramConnectPoller = null;
+      }
+    } catch (error) {
+      if (attempts >= 20) {
+        clearInterval(state.instagramConnectPoller);
+        state.instagramConnectPoller = null;
+      }
+    }
+  }, 3000);
+}
+
+async function syncInstagramChannel(channelId) {
+  try {
+    const result = await api(`/api/channels/${channelId}/sync-instagram`, {
+      method: "POST",
+    });
+    await refreshChannels();
+    log("Instagram 채널 동기화 성공", result);
+  } catch (error) {
+    log("Instagram 채널 동기화 실패", error);
   }
 }
 
@@ -664,7 +950,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     el.serviceList.innerHTML = "";
     el.reservationList.innerHTML = "";
     el.reservationCustomer.innerHTML = "";
-    el.reservationService.innerHTML = `<option value="">선택 안 함</option>`;
+    el.reservationService.innerHTML = "";
     log("로그아웃");
   }
 });
@@ -713,7 +999,6 @@ document.getElementById("reservationForm").addEventListener("submit", async (eve
     const payload = formToJson(event.target);
     payload.startAt = toIsoLocal(payload.startAt);
     payload.endAt = toIsoLocal(payload.endAt);
-    payload.serviceId = payload.serviceId || null;
     const result = await api("/api/reservations", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -729,7 +1014,10 @@ document.getElementById("reservationForm").addEventListener("submit", async (eve
 document.getElementById("refreshCustomersBtn").addEventListener("click", () => refreshCustomers().catch((error) => log("고객 새로고침 실패", error)));
 document.getElementById("refreshServicesBtn").addEventListener("click", () => refreshServices().catch((error) => log("서비스 새로고침 실패", error)));
 document.getElementById("refreshReservationsBtn").addEventListener("click", () => refreshReservations().catch((error) => log("예약 새로고침 실패", error)));
+el.refreshChannelsBtn.addEventListener("click", () => refreshChannels().catch((error) => log("채널 새로고침 실패", error)));
+el.startInstagramConnectBtn.addEventListener("click", startInstagramConnect);
 el.refreshDmMessagesBtn.addEventListener("click", () => refreshDmMessages().catch((error) => log("DM 새로고침 실패", error)));
+el.dmStatusFilter.addEventListener("change", () => refreshDmMessages().catch((error) => log("DM 새로고침 실패", error)));
 el.refreshOrgsBtn.addEventListener("click", () => refreshOrgs().catch((error) => log("조직 새로고침 실패", error)));
 el.orgForm.addEventListener("submit", createOrganization);
 el.dmForm.addEventListener("submit", submitDmReservation);
@@ -742,6 +1030,11 @@ el.orgList.addEventListener("click", (event) => {
   const scheduleButton = event.target.closest("[data-action='update-schedule']");
   if (scheduleButton) {
     updateOrganizationSchedule(scheduleButton.dataset.id);
+    return;
+  }
+  const webhookButton = event.target.closest("[data-action='update-webhook']");
+  if (webhookButton) {
+    updateOrganizationWebhook(webhookButton.dataset.id);
     return;
   }
   const switchButton = event.target.closest("[data-action='switch-org']");
@@ -760,6 +1053,12 @@ el.closeCustomerDialogBtn.addEventListener("click", () => el.customerDialog.clos
 el.customerEditForm.addEventListener("submit", submitCustomerEdit);
 el.closeServiceDialogBtn.addEventListener("click", () => el.serviceDialog.close());
 el.serviceEditForm.addEventListener("submit", submitServiceEdit);
+el.closeDmMessageDialogBtn.addEventListener("click", () => el.dmMessageDialog.close());
+el.dmMessageConfirmForm.addEventListener("submit", submitDmMessageConfirm);
+el.dmConfirmUpdateBtn.addEventListener("click", confirmDmUpdate);
+el.dmConfirmCancelBtn.addEventListener("click", confirmDmCancel);
+el.dmMessageService.addEventListener("change", syncDmEndAtFromService);
+el.dmMessageStartAt.addEventListener("change", syncDmEndAtFromService);
 el.customerList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action='edit-customer']");
   if (!button) {
@@ -781,7 +1080,32 @@ el.reservationList.addEventListener("click", (event) => {
   }
   openReservationDialog(button.dataset.id);
 });
+el.dmMessageList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='open-dm-message']");
+  if (!button) {
+    return;
+  }
+  openDmMessageDialog(button.dataset.id);
+});
+el.channelList.addEventListener("click", (event) => {
+  const syncButton = event.target.closest("[data-action='sync-instagram-channel']");
+  if (syncButton) {
+    syncInstagramChannel(syncButton.dataset.id);
+    return;
+  }
+  const button = event.target.closest("[data-action='disconnect-channel']");
+  if (!button) {
+    return;
+  }
+  disconnectChannel(button.dataset.id);
+});
 
 renderSession();
 wireTabs();
 bootstrapData().catch((error) => log("초기 데이터 로드 실패", error));
+window.addEventListener("focus", () => {
+  if (state.token) {
+    refreshChannels().catch((error) => log("채널 새로고침 실패", error));
+    refreshDmMessages().catch((error) => log("DM 새로고침 실패", error));
+  }
+});

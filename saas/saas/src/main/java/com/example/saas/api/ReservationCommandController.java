@@ -1,7 +1,5 @@
 package com.example.saas.api;
 
-import com.example.saas.domain.Organization;
-import com.example.saas.repo.OrganizationRepository;
 import com.example.saas.reservation.ReservationResponse;
 import com.example.saas.reservation.ReservationUpdateRequest;
 import com.example.saas.security.JwtPrincipal;
@@ -27,7 +25,7 @@ public class ReservationCommandController {
 
     public record CreateReservationRequest(
             @NotNull UUID customerId,
-            UUID serviceId,
+            @NotNull UUID serviceId,
             @NotNull OffsetDateTime startAt,
             @NotNull OffsetDateTime endAt,
             String notes

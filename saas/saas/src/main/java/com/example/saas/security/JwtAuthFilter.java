@@ -33,7 +33,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             || p.equals("/app.css")
             || p.equals("/app.js")
             || p.equals("/favicon.ico")
+            || p.startsWith("/legal/")
             || p.equals("/ping-db")
+            || p.equals("/api/channels/instagram/callback")
+            || p.startsWith("/webhooks/dm/")
+            || p.equals("/webhooks/meta/instagram")
+            || p.equals("/webhooks/meta/data-deletion")
+            || p.equals("/webhooks/meta/data-deletion/status")
             || p.startsWith("/error");
     }
 

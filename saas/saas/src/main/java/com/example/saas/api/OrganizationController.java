@@ -10,6 +10,8 @@ import com.example.saas.org.dto.OrganizationResponse;
 import com.example.saas.org.dto.OrganizationScheduleResponse;
 import com.example.saas.org.dto.UpdateOrganizationPlanRequest;
 import com.example.saas.org.dto.UpdateOrganizationScheduleRequest;
+import com.example.saas.org.dto.OrganizationWebhookResponse;
+import com.example.saas.org.dto.UpdateOrganizationWebhookRequest;
 import com.example.saas.repo.OrganizationRepository;
 import com.example.saas.security.JwtPrincipal;
 import com.example.saas.domain.Organization;
@@ -50,6 +52,8 @@ public class OrganizationController {
         org.setBusinessOpenTime(java.time.LocalTime.of(9, 0));
         org.setBusinessCloseTime(java.time.LocalTime.of(21, 0));
         org.setClosedWeekdays("SUNDAY");
+        org.setDmWebhookEnabled(false);
+        org.setDmWebhookSecret(UUID.randomUUID().toString().replace("-", ""));
 
         organizations.save(org);
 
@@ -111,6 +115,22 @@ public class OrganizationController {
         return ResponseEntity.ok(toResponse(org));
     }
 
+    @PatchMapping("/{orgId}/webhook")
+    public ResponseEntity<OrganizationResponse> updateWebhook(@PathVariable UUID orgId,
+                                                              @RequestBody @Valid UpdateOrganizationWebhookRequest req,
+                                                              Authentication authentication) {
+        assertOwner(authentication, orgId);
+
+        Organization org = organizations.findById(orgId)
+                .orElseThrow(() -> new NotFoundException("ORG_NOT_FOUND", "조직을 찾을 수 없습니다."));
+        org.setDmWebhookEnabled(req.enabled());
+        if (req.secret() != null && !req.secret().isBlank()) {
+            org.setDmWebhookSecret(req.secret().trim());
+        }
+        organizations.save(org);
+        return ResponseEntity.ok(toResponse(org));
+    }
+
     private OrganizationResponse toResponse(Organization org) {
         OrganizationPlan plan = org.getPlan() == null ? OrganizationPlan.FREE : org.getPlan();
         return new OrganizationResponse(
@@ -124,6 +144,10 @@ public class OrganizationController {
                         org.getBusinessOpenTime(),
                         org.getBusinessCloseTime(),
                         parseClosedWeekdays(org.getClosedWeekdays())
+                ),
+                new OrganizationWebhookResponse(
+                        org.isDmWebhookEnabled(),
+                        org.getDmWebhookSecret()
                 )
         );
     }

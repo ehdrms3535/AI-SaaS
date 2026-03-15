@@ -48,6 +48,10 @@ public class DmMessage {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
+    private DmIntent intent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
     private DmMessageStatus status;
 
     @Column(name = "customer_id", columnDefinition = "uuid")
@@ -58,6 +62,15 @@ public class DmMessage {
 
     @Column(name = "failure_reason", columnDefinition = "text")
     private String failureReason;
+
+    @Column(name = "reply_text", columnDefinition = "text")
+    private String replyText;
+
+    @Column(name = "parsed_start_at")
+    private OffsetDateTime parsedStartAt;
+
+    @Column(name = "parsed_end_at")
+    private OffsetDateTime parsedEndAt;
 
     @Column(name = "received_at", nullable = false)
     private OffsetDateTime receivedAt;

@@ -43,6 +43,17 @@
             </form>
             <div id="orgList" class="list"></div>
         </div>
+        <div class="org-card">
+            <div class="list-toolbar">
+                <h4>채널 연결</h4>
+                <button id="refreshChannelsBtn" class="ghost-btn" type="button">새로고침</button>
+            </div>
+            <p class="field-help">현재 선택된 조직 기준으로 Instagram 채널 연결 상태를 확인합니다.</p>
+            <div class="list-item-actions">
+                <button id="startInstagramConnectBtn" type="button">Instagram 연결 시작</button>
+            </div>
+            <div id="channelList" class="list"></div>
+        </div>
     </aside>
 
     <main class="content">
@@ -133,7 +144,7 @@
                     <form id="reservationForm" class="card-form">
                         <h4>예약 생성</h4>
                         <label><span>고객</span><select name="customerId" id="reservationCustomer" required></select></label>
-                        <label><span>서비스</span><select name="serviceId" id="reservationService"><option value="">선택 안 함</option></select></label>
+                        <label><span>서비스</span><select name="serviceId" id="reservationService" required></select></label>
                         <label><span>시작 시간(UTC)</span><input name="startAt" type="datetime-local" required></label>
                         <label><span>종료 시간(UTC)</span><input name="endAt" type="datetime-local" required></label>
                         <label><span>메모</span><textarea name="notes" rows="4"></textarea></label>
@@ -158,12 +169,13 @@
                 <div class="workspace dm-workspace">
                     <form id="dmForm" class="card-form">
                         <h4>DM 자동예약 테스트</h4>
-                        <label><span>고객 힌트</span><input name="customerHint" placeholder="김고객 또는 010-1111-2222"></label>
-                        <label><span>발신자 이름</span><input name="senderName" placeholder="김고객"></label>
-                        <label><span>발신자 전화번호</span><input name="senderPhone" placeholder="010-1111-2222"></label>
-                        <label><span>서비스 힌트</span><input name="serviceHint" placeholder="커트"></label>
-                        <label><span>기본 소요시간(분)</span><input name="durationMinutes" type="number" min="10" value="60"></label>
+                        <p class="field-help">메시지 본문만으로도 예약을 시도합니다. 아래 입력은 디버그용 선택값입니다.</p>
                         <label><span>DM 메시지</span><textarea name="message" rows="6" placeholder="김고객 3월 15일 14시 커트 예약하고 싶어요" required></textarea></label>
+                        <label><span>고객 힌트 (선택)</span><input name="customerHint" placeholder="김고객 또는 010-1111-2222"></label>
+                        <label><span>발신자 이름 (선택)</span><input name="senderName" placeholder="김고객"></label>
+                        <label><span>발신자 전화번호 (선택)</span><input name="senderPhone" placeholder="010-1111-2222"></label>
+                        <label><span>서비스 힌트 (선택)</span><input name="serviceHint" placeholder="커트"></label>
+                        <label><span>기본 소요시간(분, 선택)</span><input name="durationMinutes" type="number" min="10" value="60"></label>
                         <button type="submit">DM 자동예약 실행</button>
                     </form>
                     <div class="list-panel">
@@ -175,7 +187,15 @@
                     <div class="list-panel">
                         <div class="list-toolbar">
                             <h4>DM Inbox</h4>
-                            <button id="refreshDmMessagesBtn" class="ghost-btn" type="button">새로고침</button>
+                            <div class="toolbar-actions">
+                                <select id="dmStatusFilter" aria-label="DM 상태 필터">
+                                    <option value="">전체</option>
+                                    <option value="RECEIVED">RECEIVED</option>
+                                    <option value="NEEDS_REVIEW">NEEDS_REVIEW</option>
+                                    <option value="RESERVED">RESERVED</option>
+                                </select>
+                                <button id="refreshDmMessagesBtn" class="ghost-btn" type="button">새로고침</button>
+                            </div>
                         </div>
                         <div id="dmMessageList" class="list"></div>
                     </div>
@@ -204,7 +224,7 @@
         </div>
         <input id="editReservationId" name="id" type="hidden">
         <label><span>고객</span><select name="customerId" id="editReservationCustomer"></select></label>
-        <label><span>서비스</span><select name="serviceId" id="editReservationService"><option value="">선택 안 함</option></select></label>
+        <label><span>서비스</span><select name="serviceId" id="editReservationService" required></select></label>
         <label><span>시작 시간(UTC)</span><input name="startAt" id="editReservationStartAt" type="datetime-local"></label>
         <label><span>종료 시간(UTC)</span><input name="endAt" id="editReservationEndAt" type="datetime-local"></label>
         <label><span>메모</span><textarea name="notes" id="editReservationNotes" rows="4"></textarea></label>
@@ -252,6 +272,33 @@
         <label class="checkbox"><input id="editServiceActive" name="active" type="checkbox"><span>활성 상태</span></label>
         <div class="modal-actions">
             <button type="submit">서비스 수정</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dmMessageDialog" class="modal">
+    <form id="dmMessageConfirmForm" class="modal-card">
+        <div class="modal-header">
+            <div>
+                <p class="eyebrow">DM Review</p>
+                <h3>DM 수동 예약 확정</h3>
+            </div>
+            <button id="closeDmMessageDialogBtn" class="ghost-btn" type="button">닫기</button>
+        </div>
+        <input id="dmMessageId" name="id" type="hidden">
+        <label><span>메시지 원문</span><textarea id="dmMessageText" rows="4" readonly></textarea></label>
+        <label><span>의도</span><input id="dmMessageIntent" type="text" readonly></label>
+        <label><span>기존 예약</span><select id="dmMessageReservation"></select></label>
+        <label><span>고객</span><select id="dmMessageCustomer" name="customerId" required></select></label>
+        <label><span>서비스</span><select id="dmMessageService" name="serviceId" required></select></label>
+        <label><span>시작 시간(UTC)</span><input id="dmMessageStartAt" name="startAt" type="datetime-local" required></label>
+        <label><span>종료 시간(UTC)</span><input id="dmMessageEndAt" name="endAt" type="datetime-local" required></label>
+        <div id="dmSuggestedTimes" class="list-item-actions"></div>
+        <label><span>운영 메모</span><textarea id="dmMessageNotes" name="notes" rows="3"></textarea></label>
+        <div class="modal-actions">
+            <button id="dmConfirmBookBtn" type="submit">수동 예약 확정</button>
+            <button id="dmConfirmUpdateBtn" type="button">예약 변경 확정</button>
+            <button id="dmConfirmCancelBtn" class="danger-btn" type="button">예약 취소 확정</button>
         </div>
     </form>
 </dialog>

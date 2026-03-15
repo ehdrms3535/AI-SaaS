@@ -1,6 +1,7 @@
 package com.example.saas.service;
 
 import com.example.saas.billing.PlanLimitService;
+import com.example.saas.api.error.BadRequestException;
 import com.example.saas.api.error.ConflictException;
 import com.example.saas.api.error.NotFoundException;
 import com.example.saas.api.error.ReservationConflictException;
@@ -34,7 +35,7 @@ public class ReservationService {
     private final ServiceLookupRepository serviceLookupRepository;
     private final Clock clock;
 
-    @Transactional
+    @Transactional(noRollbackFor = ReservationConflictException.class)
     public UUID create(UUID orgId,
                        UUID customerId,
                        UUID serviceId,
@@ -45,7 +46,7 @@ public class ReservationService {
         return create(orgId, customerId, serviceId, startAt, endAt, createdByUserId, notes, ReservationSource.MANUAL);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ReservationConflictException.class)
     public UUID create(UUID orgId,
                        UUID customerId,
                        UUID serviceId,
@@ -105,7 +106,10 @@ public class ReservationService {
         if (!customerLookupRepository.existsByIdAndOrganizationId(customerId, orgId)) {
             throw new NotFoundException("CUSTOMER_NOT_FOUND", "고객을 찾을 수 없습니다.");
         }
-        if (serviceId != null && !serviceLookupRepository.existsByIdAndOrganizationId(serviceId, orgId)) {
+        if (serviceId == null) {
+            throw new BadRequestException("SERVICE_REQUIRED", "서비스는 필수입니다.");
+        }
+        if (!serviceLookupRepository.existsByIdAndOrganizationId(serviceId, orgId)) {
             throw new NotFoundException("SERVICE_NOT_FOUND", "서비스를 찾을 수 없습니다.");
         }
     }
