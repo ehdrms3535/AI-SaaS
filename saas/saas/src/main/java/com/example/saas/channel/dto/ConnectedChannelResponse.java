@@ -14,6 +14,7 @@ public record ConnectedChannelResponse(
         String externalAccountId,
         String accountName,
         String username,
+        String sendMode,
         boolean webhookSubscribed,
         OffsetDateTime tokenExpiresAt,
         OffsetDateTime connectedAt,

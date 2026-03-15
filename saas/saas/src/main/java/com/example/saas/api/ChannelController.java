@@ -495,11 +495,23 @@ public class ChannelController {
                 channel.getExternalAccountId(),
                 channel.getAccountName(),
                 channel.getUsername(),
+                resolveSendMode(channel.getProvider()),
                 channel.isWebhookSubscribed(),
                 channel.getTokenExpiresAt(),
                 channel.getConnectedAt(),
                 channel.getDisconnectedAt()
         );
+    }
+
+    private String resolveSendMode(ChannelProvider provider) {
+        DmSenderProperties.Channel channel = switch (provider) {
+            case INSTAGRAM -> dmSenderProperties.getInstagram();
+            case KAKAO -> dmSenderProperties.getKakao();
+        };
+        if (!channel.isEnabled()) {
+            return "DISABLED";
+        }
+        return channel.isDryRun() ? "DRY_RUN" : "LIVE";
     }
 
     private void assertOwner(UUID userId, UUID orgId) {

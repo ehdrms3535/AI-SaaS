@@ -255,6 +255,98 @@ button {
     margin-top: 12px;
 }
 
+.dm-message-item {
+    display: grid;
+    gap: 10px;
+}
+
+.channel-item {
+    display: grid;
+    gap: 8px;
+}
+
+.channel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.dm-message-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.status-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.status-chip.success {
+    background: rgba(40, 132, 89, 0.14);
+    color: #1f6f48;
+}
+
+.status-chip.warning {
+    background: rgba(197, 97, 47, 0.14);
+    color: #8d3b16;
+}
+
+.status-chip.neutral {
+    background: rgba(78, 89, 112, 0.12);
+    color: #445066;
+}
+
+.dm-message-channel {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.dm-message-sender {
+    margin: 0;
+}
+
+.dm-message-body {
+    margin: 0;
+    color: var(--ink) !important;
+    font-size: 15px !important;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.dm-message-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px 12px;
+}
+
+.dm-message-meta p {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+}
+
+.dm-message-meta span {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.dm-message-meta strong {
+    font-size: 13px;
+    color: var(--ink);
+    word-break: break-word;
+}
+
 .tabs {
     display: flex;
     gap: 10px;

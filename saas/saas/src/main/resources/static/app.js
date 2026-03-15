@@ -248,8 +248,11 @@ async function refreshChannels() {
   const channels = await api("/api/channels");
   state.channels = channels;
   el.channelList.innerHTML = channels.map((channel) => `
-    <article class="list-item">
-      <strong>${channel.provider}</strong>
+    <article class="list-item channel-item">
+      <div class="channel-head">
+        <strong>${channel.provider}</strong>
+        <span class="status-chip ${getChannelModeTone(channel.sendMode)}">${getChannelModeLabel(channel.sendMode)}</span>
+      </div>
       <p>상태: ${channel.status}</p>
       <p>계정명: ${channel.accountName || "-"}</p>
       <p>유저명: ${channel.username || "-"}</p>
@@ -264,6 +267,28 @@ async function refreshChannels() {
       </div>
     </article>
   `).join("") || `<article class="list-item"><p>연결된 채널이 없습니다.</p></article>`;
+}
+
+function getChannelModeLabel(sendMode) {
+  switch (sendMode) {
+    case "LIVE":
+      return "LIVE SEND";
+    case "DRY_RUN":
+      return "DRY RUN";
+    default:
+      return "SEND OFF";
+  }
+}
+
+function getChannelModeTone(sendMode) {
+  switch (sendMode) {
+    case "LIVE":
+      return "success";
+    case "DRY_RUN":
+      return "warning";
+    default:
+      return "neutral";
+  }
 }
 
 async function refreshServices() {
@@ -324,24 +349,77 @@ async function refreshDmMessages() {
   const query = el.dmStatusFilter.value ? `?status=${encodeURIComponent(el.dmStatusFilter.value)}` : "";
   const messages = await api(`/api/dm/messages${query}`);
   state.dmMessages = messages;
-  el.dmMessageList.innerHTML = messages.map((message) => `
-    <article class="list-item">
-      <strong>${message.status}</strong>
-      <p>의도: ${message.intent || "BOOK"}</p>
-      <p>채널: ${message.channel}</p>
-      <p>발신자: ${message.senderName || "-"} / ${message.senderPhone || "-"}</p>
-      <p>고객ID: ${message.customerId || "-"}</p>
-      <p>예약ID: ${message.reservationId || "-"}</p>
-      <p>메시지: ${message.messageText}</p>
-      <p>처리결과: ${message.failureReason || "예약 완료"}</p>
-      <p>자동응답: ${message.replyText || "-"}</p>
-      <p>파싱 시간: ${message.parsedStartAt || "-"} ~ ${message.parsedEndAt || "-"}</p>
-      <p>수신시각: ${message.receivedAt || "-"}</p>
+  el.dmMessageList.innerHTML = messages.map(renderDmMessageCard).join("") || `<article class="list-item"><p>DM 메시지가 없습니다.</p></article>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  try {
+    return new Date(value).toLocaleString("ko-KR");
+  } catch {
+    return value;
+  }
+}
+
+function getDmStatusTone(status) {
+  switch (status) {
+    case "RESERVED":
+      return "success";
+    case "NEEDS_REVIEW":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function getDmOutcomeText(message) {
+  if (message.status === "RESERVED") {
+    return "예약 완료 또는 운영 처리 완료";
+  }
+  if (message.failureReason) {
+    return message.failureReason;
+  }
+  return "검토 필요";
+}
+
+function renderDmMessageCard(message) {
+  const senderSummary = [message.senderName, message.senderPhone].filter(Boolean).join(" / ") || "채널 사용자";
+  const parseSummary = message.parsedStartAt || message.parsedEndAt
+    ? `${formatDateTime(message.parsedStartAt)} ~ ${formatDateTime(message.parsedEndAt)}`
+    : "-";
+  return `
+    <article class="list-item dm-message-item">
+      <div class="dm-message-head">
+        <span class="status-chip ${getDmStatusTone(message.status)}">${escapeHtml(message.status)}</span>
+        <span class="dm-message-channel">${escapeHtml(message.channel)} · ${escapeHtml(message.intent || "BOOK")}</span>
+      </div>
+      <strong class="dm-message-sender">${escapeHtml(senderSummary)}</strong>
+      <p class="dm-message-body">${escapeHtml(message.messageText || "-")}</p>
+      <div class="dm-message-meta">
+        <p><span>처리결과</span><strong>${escapeHtml(getDmOutcomeText(message))}</strong></p>
+        <p><span>자동응답</span><strong>${escapeHtml(message.replyText || "-")}</strong></p>
+        <p><span>고객ID</span><strong>${escapeHtml(message.customerId || "-")}</strong></p>
+        <p><span>예약ID</span><strong>${escapeHtml(message.reservationId || "-")}</strong></p>
+        <p><span>파싱 시간</span><strong>${escapeHtml(parseSummary)}</strong></p>
+        <p><span>수신시각</span><strong>${escapeHtml(formatDateTime(message.receivedAt))}</strong></p>
+        <p><span>처리시각</span><strong>${escapeHtml(formatDateTime(message.processedAt))}</strong></p>
+      </div>
       <div class="list-item-actions">
         <button type="button" data-action="open-dm-message" data-id="${message.id}">상세</button>
       </div>
     </article>
-  `).join("") || `<article class="list-item"><p>DM 메시지가 없습니다.</p></article>`;
+  `;
 }
 
 async function bootstrapData() {
@@ -1109,3 +1187,9 @@ window.addEventListener("focus", () => {
     refreshDmMessages().catch((error) => log("DM 새로고침 실패", error));
   }
 });
+setInterval(() => {
+  if (!state.token) {
+    return;
+  }
+  refreshDmMessages().catch((error) => log("DM 자동 새로고침 실패", error));
+}, 15000);
