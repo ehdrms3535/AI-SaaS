@@ -7,18 +7,23 @@ import com.example.saas.common.ErrorCode;
 import com.example.saas.org.OrganizationMembershipRepository;
 import com.example.saas.repo.OrganizationRepository;
 import com.example.saas.org.OrganizationMembership;
+import com.example.saas.repo.PasswordResetTokenRepository;
 import com.example.saas.security.JwtTokenProvider;
+import com.example.saas.domain.PasswordResetToken;
 import com.example.saas.domain.User;
 import com.example.saas.repo.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -28,7 +33,9 @@ public class AuthService {
     private final UserRepository users;
     private final RefreshTokenRepository refreshTokens;
     private final OrganizationMembershipRepository memberships; // ✅ 추가
-        private final OrganizationRepository organizations;
+    private final OrganizationRepository organizations;
+    private final PasswordResetTokenRepository passwordResetTokens;
+    private final PasswordResetMailService passwordResetMailService;
     private final PasswordEncoder encoder;
     private final JwtTokenProvider jwt;
 
@@ -130,8 +137,8 @@ public class AuthService {
         );
     }
 
-            @Transactional
-            public AuthResponse register(com.example.saas.auth.dto.RegisterRequest req) {
+    @Transactional
+    public AuthResponse register(com.example.saas.auth.dto.RegisterRequest req) {
                 // 이메일 중복 체크
                 if (users.findByEmail(req.email()).isPresent()) {
                     throw new ApiException(ErrorCode.EMAIL_TAKEN);
@@ -189,7 +196,69 @@ public class AuthService {
                         refresh,
                         new AuthResponse.UserView(u.getId(), u.getEmail(), u.getName())
                 );
-            }
+    }
+
+    @Transactional
+    public PasswordResetRequestResponse requestPasswordReset(PasswordResetRequest req) {
+        User user = users.findByEmail(req.email())
+                .orElseThrow(() -> new ApiException(ErrorCode.EMAIL_NOT_FOUND));
+
+        List<PasswordResetToken> activeTokens = passwordResetTokens.findByUserIdAndUsedAtIsNull(user.getId());
+        Instant now = Instant.now();
+        activeTokens.forEach(token -> token.setUsedAt(now));
+        if (!activeTokens.isEmpty()) {
+            passwordResetTokens.saveAll(activeTokens);
+        }
+
+        String plainToken = generateResetToken();
+        PasswordResetToken resetToken = PasswordResetToken.builder()
+                .id(UUID.randomUUID())
+                .userId(user.getId())
+                .tokenHash(sha256(plainToken))
+                .createdAt(now)
+                .expiresAt(now.plusSeconds(60 * 30))
+                .build();
+        passwordResetTokens.save(resetToken);
+
+        String normalizedBaseUrl = req.baseUrl().replaceAll("/+$", "");
+        if (!StringUtils.hasText(normalizedBaseUrl)) {
+            throw new ApiException(ErrorCode.BAD_REQUEST);
+        }
+        String resetLink = normalizedBaseUrl + "/reset-password.html?token=" + plainToken;
+        passwordResetMailService.sendResetLink(user.getEmail(), resetLink);
+
+        return new PasswordResetRequestResponse(
+                "재설정 링크를 이메일로 보냈습니다. 메일함을 확인해 주세요."
+        );
+    }
+
+    @Transactional
+    public void confirmPasswordReset(PasswordResetConfirmRequest req) {
+        PasswordResetToken resetToken = getValidPasswordResetToken(req.token());
+
+        if (resetToken.getUsedAt() != null) {
+            throw new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID);
+        }
+        if (resetToken.getExpiresAt().isBefore(Instant.now())) {
+            throw new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_EXPIRED);
+        }
+
+        User user = users.findById(resetToken.getUserId())
+                .orElseThrow(() -> new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID));
+
+        user.setPasswordHash(encoder.encode(req.newPassword()));
+        users.save(user);
+
+        resetToken.setUsedAt(Instant.now());
+        passwordResetTokens.save(resetToken);
+    }
+
+    @Transactional(readOnly = true)
+    public PasswordResetValidateResponse validatePasswordResetToken(String token) {
+        PasswordResetToken resetToken = getValidPasswordResetToken(token);
+        return new PasswordResetValidateResponse(true, resetToken.getExpiresAt());
+    }
+
     private static String sha256(String s) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -198,5 +267,24 @@ public class AuthService {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    private static String generateResetToken() {
+        byte[] bytes = new byte[24];
+        new SecureRandom().nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
+    }
+
+    private PasswordResetToken getValidPasswordResetToken(String token) {
+        PasswordResetToken resetToken = passwordResetTokens.findByTokenHash(sha256(token))
+                .orElseThrow(() -> new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID));
+
+        if (resetToken.getUsedAt() != null) {
+            throw new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_INVALID);
+        }
+        if (resetToken.getExpiresAt().isBefore(Instant.now())) {
+            throw new ApiException(ErrorCode.PASSWORD_RESET_TOKEN_EXPIRED);
+        }
+        return resetToken;
     }
 }

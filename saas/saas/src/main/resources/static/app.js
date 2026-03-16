@@ -1,4 +1,5 @@
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:8081`;
+const API_BASE = window.location.origin;
+const REMEMBERED_EMAIL_KEY = "saas.rememberedEmail";
 const state = {
   token: localStorage.getItem("saas.accessToken") || "",
   refreshToken: localStorage.getItem("saas.refreshToken") || "",
@@ -9,20 +10,60 @@ const state = {
   services: [],
   reservations: [],
   dmMessages: [],
+  customerPage: 1,
+  servicePage: 1,
+  reservationPage: 1,
+  reservationCalendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  selectedReservationDateKey: "",
+  dmPage: 1,
+  listPageSize: 5,
+  dmPageSize: 5,
   instagramConnectPoller: null,
 };
 
 const el = {
+  authShell: document.getElementById("authShell"),
+  appShell: document.getElementById("appShell"),
+  registerForm: document.getElementById("registerForm"),
+  loginForm: document.getElementById("loginForm"),
+  registerFeedback: document.getElementById("registerFeedback"),
+  loginFeedback: document.getElementById("loginFeedback"),
+  rememberEmail: document.getElementById("rememberEmail"),
+  openPasswordResetBtn: document.getElementById("openPasswordResetBtn"),
+  passwordResetDialog: document.getElementById("passwordResetDialog"),
+  passwordResetForm: document.getElementById("passwordResetForm"),
+  passwordResetEmail: document.getElementById("passwordResetEmail"),
+  passwordResetFeedback: document.getElementById("passwordResetFeedback"),
+  passwordResetSubmitBtn: document.getElementById("passwordResetSubmitBtn"),
+  closePasswordResetDialogBtn: document.getElementById("closePasswordResetDialogBtn"),
   sessionState: document.getElementById("sessionState"),
   sessionUser: document.getElementById("sessionUser"),
   sessionOrg: document.getElementById("sessionOrg"),
-  apiBaseLabel: document.getElementById("apiBaseLabel"),
+  heroBadge: document.getElementById("heroBadge"),
   logView: document.getElementById("logView"),
   orgList: document.getElementById("orgList"),
   channelList: document.getElementById("channelList"),
+  dashboardStats: document.getElementById("dashboardStats"),
+  dashboardRecentReservations: document.getElementById("dashboardRecentReservations"),
+  dashboardTodayReservations: document.getElementById("dashboardTodayReservations"),
+  dashboardDmSummary: document.getElementById("dashboardDmSummary"),
+  dashboardChannelStatus: document.getElementById("dashboardChannelStatus"),
   customerList: document.getElementById("customerList"),
+  customerPagination: document.getElementById("customerPagination"),
+  customerCountLabel: document.getElementById("customerCountLabel"),
   serviceList: document.getElementById("serviceList"),
+  servicePagination: document.getElementById("servicePagination"),
+  serviceCountLabel: document.getElementById("serviceCountLabel"),
   reservationList: document.getElementById("reservationList"),
+  reservationPagination: document.getElementById("reservationPagination"),
+  reservationCountLabel: document.getElementById("reservationCountLabel"),
+  reservationCalendarPrevBtn: document.getElementById("reservationCalendarPrevBtn"),
+  reservationCalendarNextBtn: document.getElementById("reservationCalendarNextBtn"),
+  reservationCalendarLabel: document.getElementById("reservationCalendarLabel"),
+  reservationCalendarGrid: document.getElementById("reservationCalendarGrid"),
+  reservationCalendarDetailTitle: document.getElementById("reservationCalendarDetailTitle"),
+  reservationCalendarDayList: document.getElementById("reservationCalendarDayList"),
+  reservationFormDateHint: document.getElementById("reservationFormDateHint"),
   reservationCustomer: document.getElementById("reservationCustomer"),
   reservationService: document.getElementById("reservationService"),
   includeCanceled: document.getElementById("includeCanceled"),
@@ -61,7 +102,10 @@ const el = {
   orgForm: document.getElementById("orgForm"),
   dmForm: document.getElementById("dmForm"),
   dmResult: document.getElementById("dmResult"),
+  dmSummaryCards: document.getElementById("dmSummaryCards"),
   dmMessageList: document.getElementById("dmMessageList"),
+  dmPagination: document.getElementById("dmPagination"),
+  dmCountLabel: document.getElementById("dmCountLabel"),
   refreshDmMessagesBtn: document.getElementById("refreshDmMessagesBtn"),
   dmStatusFilter: document.getElementById("dmStatusFilter"),
   dmMessageDialog: document.getElementById("dmMessageDialog"),
@@ -88,17 +132,118 @@ function log(message, data) {
   el.logView.textContent = `[${timestamp}] ${message}${payload}\n\n${el.logView.textContent}`;
 }
 
+function setFormFeedback(target, message = "", tone = "") {
+  if (!target) {
+    return;
+  }
+  target.textContent = message;
+  target.classList.remove("success", "error");
+  if (tone) {
+    target.classList.add(tone);
+  }
+}
+
+function setFormPending(form, pending, label) {
+  const submitButton = form?.querySelector("button[type='submit']");
+  if (!submitButton) {
+    return;
+  }
+  if (!submitButton.dataset.defaultLabel) {
+    submitButton.dataset.defaultLabel = submitButton.textContent;
+  }
+  submitButton.disabled = pending;
+  submitButton.textContent = pending ? label : submitButton.dataset.defaultLabel;
+}
+
+function hydrateRememberedEmail() {
+  const rememberedEmail = localStorage.getItem(REMEMBERED_EMAIL_KEY) || "";
+  const loginEmailInput = document.querySelector("#loginForm input[name='email']");
+  if (!loginEmailInput) {
+    return;
+  }
+  if (rememberedEmail) {
+    loginEmailInput.value = rememberedEmail;
+    el.rememberEmail.checked = true;
+  }
+  loginEmailInput.focus();
+}
+
+function syncRememberedEmail(email) {
+  if (el.rememberEmail.checked && email) {
+    localStorage.setItem(REMEMBERED_EMAIL_KEY, email);
+  } else {
+    localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+  }
+}
+
+function openPasswordResetDialog() {
+  const loginEmailInput = el.loginForm?.querySelector("input[name='email']");
+  const initialEmail = loginEmailInput?.value || localStorage.getItem(REMEMBERED_EMAIL_KEY) || "";
+  el.passwordResetEmail.value = initialEmail;
+  el.passwordResetSubmitBtn.textContent = "재설정 링크 보내기";
+  el.passwordResetSubmitBtn.dataset.defaultLabel = "재설정 링크 보내기";
+  setFormFeedback(el.passwordResetFeedback);
+  el.passwordResetDialog.showModal();
+  el.passwordResetEmail.focus();
+}
+
+function closePasswordResetDialog() {
+  el.passwordResetDialog.close();
+}
+
+async function submitPasswordResetRequest(event) {
+  event.preventDefault();
+  const email = el.passwordResetEmail.value.trim();
+  if (!email) {
+    setFormFeedback(el.passwordResetFeedback, "재설정 안내를 받을 이메일을 입력해 주세요.", "error");
+    el.passwordResetEmail.focus();
+    return;
+  }
+
+  setFormPending(el.passwordResetForm, true, "전송 중...");
+  try {
+    const result = await api("/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        baseUrl: window.location.origin,
+      }),
+    });
+    setFormFeedback(el.passwordResetFeedback, result.message || "재설정 링크를 메일로 보냈습니다.", "success");
+    window.setTimeout(() => {
+      closePasswordResetDialog();
+    }, 900);
+  } catch (error) {
+    setFormFeedback(el.passwordResetFeedback, error.message || "비밀번호 재설정 요청에 실패했습니다.", "error");
+    el.passwordResetEmail.focus();
+  } finally {
+    setFormPending(el.passwordResetForm, false);
+  }
+}
+
+function toggleShells() {
+  const loggedIn = Boolean(state.token && state.user);
+  el.authShell.classList.toggle("hidden", loggedIn);
+  el.appShell.classList.toggle("hidden", !loggedIn);
+}
+
 function renderSession() {
-  el.apiBaseLabel.textContent = API_BASE;
   if (!state.token || !state.user) {
+    toggleShells();
     el.sessionState.textContent = "로그아웃";
     el.sessionUser.textContent = "-";
     el.sessionOrg.textContent = "-";
     return;
   }
+  toggleShells();
   el.sessionState.textContent = "로그인";
   el.sessionUser.textContent = `${state.user.name} / ${state.user.email}`;
   el.sessionOrg.textContent = parseJwt(state.token).org || "-";
+}
+
+function getCurrentOrganization() {
+  const currentOrgId = parseJwt(state.token).org;
+  return state.orgs.find((org) => org.id === currentOrgId) || null;
 }
 
 function parseJwt(token) {
@@ -150,6 +295,43 @@ function wireTabs() {
       document.querySelectorAll(".tab, .tab-content").forEach((node) => node.classList.remove("active"));
       tab.classList.add("active");
       document.querySelector(`.tab-content[data-content="${tab.dataset.tab}"]`).classList.add("active");
+    });
+  });
+}
+
+function wirePasswordToggles() {
+  document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const field = button.closest(".password-field")?.querySelector("input");
+      if (!field) {
+        return;
+      }
+      const nextType = field.type === "password" ? "text" : "password";
+      field.type = nextType;
+      button.textContent = nextType === "password" ? "보기" : "숨기기";
+    });
+  });
+}
+
+function wireAuthFieldFlow() {
+  [el.registerForm, el.loginForm].forEach((form) => {
+    if (!form) {
+      return;
+    }
+    const fields = Array.from(form.querySelectorAll("input"))
+      .filter((field) => field.type !== "checkbox" && field.type !== "hidden");
+    fields.forEach((field, index) => {
+      field.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey) {
+          return;
+        }
+        const isLastField = index === fields.length - 1;
+        if (!isLastField) {
+          event.preventDefault();
+          fields[index + 1].focus();
+          fields[index + 1].select?.();
+        }
+      });
     });
   });
 }
@@ -218,23 +400,13 @@ async function refreshOrgs() {
       </div>
     </article>
   `).join("") || `<article class="list-item"><p>조직이 없습니다.</p></article>`;
+  renderDashboard();
 }
 
 async function refreshCustomers() {
   const customers = await api("/api/customers");
   state.customers = customers;
-  el.customerList.innerHTML = customers.map((customer) => `
-    <article class="list-item">
-      <strong>${customer.name}</strong>
-      <p>${customer.phone || "-"}</p>
-      <p>${customer.email || "-"}</p>
-      <p>${customer.memo || "-"}</p>
-      <p><code>${customer.id}</code></p>
-      <div class="list-item-actions">
-        <button type="button" data-action="edit-customer" data-id="${customer.id}">수정</button>
-      </div>
-    </article>
-  `).join("") || `<article class="list-item"><p>고객이 없습니다.</p></article>`;
+  renderCustomerPage();
 
   const customerOptions = customers.map((customer) =>
     `<option value="${customer.id}">${customer.name} (${customer.phone || "전화없음"})</option>`
@@ -242,6 +414,7 @@ async function refreshCustomers() {
   el.reservationCustomer.innerHTML = customerOptions;
   el.editReservationCustomer.innerHTML = customerOptions;
   el.dmMessageCustomer.innerHTML = customerOptions;
+  renderDashboard();
 }
 
 async function refreshChannels() {
@@ -250,33 +423,36 @@ async function refreshChannels() {
   el.channelList.innerHTML = channels.map((channel) => `
     <article class="list-item channel-item">
       <div class="channel-head">
-        <strong>${channel.provider}</strong>
+        <strong>${channel.provider === "INSTAGRAM" ? "Instagram" : channel.provider}</strong>
         <span class="status-chip ${getChannelModeTone(channel.sendMode)}">${getChannelModeLabel(channel.sendMode)}</span>
       </div>
-      <p>상태: ${channel.status}</p>
-      <p>계정명: ${channel.accountName || "-"}</p>
-      <p>유저명: ${channel.username || "-"}</p>
-      <p>외부 계정 ID: ${channel.externalAccountId || "-"}</p>
-      <p>Webhook: ${channel.webhookSubscribed ? "연결됨" : "미연결"}</p>
-      <p>연결 시각: ${channel.connectedAt || "-"}</p>
+      <div class="channel-meta">
+        <p><span>상태</span><strong>${channel.status}</strong></p>
+        <p><span>계정명</span><strong>${escapeHtml(channel.accountName || "-")}</strong></p>
+        <p><span>유저명</span><strong>${escapeHtml(channel.username || "-")}</strong></p>
+        <p><span>외부 계정 ID</span><strong>${escapeHtml(channel.externalAccountId || "-")}</strong></p>
+        <p><span>Webhook</span><strong>${channel.webhookSubscribed ? "연결됨" : "미연결"}</strong></p>
+        <p><span>연결 시각</span><strong>${escapeHtml(formatDateTime(channel.connectedAt))}</strong></p>
+      </div>
       <div class="list-item-actions">
-        ${channel.provider === "INSTAGRAM" && channel.status === "ACTIVE"
+        ${channel.provider === "INSTAGRAM" && channel.status !== "DISCONNECTED"
           ? `<button type="button" class="ghost-btn" data-action="sync-instagram-channel" data-id="${channel.id}">Instagram 동기화</button>`
           : ""}
         <button type="button" class="ghost-btn" data-action="disconnect-channel" data-id="${channel.id}" ${channel.status === "DISCONNECTED" ? "disabled" : ""}>연결 해제</button>
       </div>
     </article>
   `).join("") || `<article class="list-item"><p>연결된 채널이 없습니다.</p></article>`;
+  renderDashboard();
 }
 
 function getChannelModeLabel(sendMode) {
   switch (sendMode) {
     case "LIVE":
-      return "LIVE SEND";
+      return "실제 발송";
     case "DRY_RUN":
-      return "DRY RUN";
+      return "테스트 모드";
     default:
-      return "SEND OFF";
+      return "발송 꺼짐";
   }
 }
 
@@ -291,20 +467,23 @@ function getChannelModeTone(sendMode) {
   }
 }
 
+function getDmStatusLabel(status) {
+  switch (status) {
+    case "RECEIVED":
+      return "신규 수신";
+    case "NEEDS_REVIEW":
+      return "검토 필요";
+    case "RESERVED":
+      return "예약 완료";
+    default:
+      return status || "-";
+  }
+}
+
 async function refreshServices() {
   const services = await api("/api/services");
   state.services = services;
-  el.serviceList.innerHTML = services.map((service) => `
-    <article class="list-item">
-      <strong>${service.name}</strong>
-      <p>${service.durationMinutes}분 / ${service.price.toLocaleString()}원</p>
-      <p>${service.active ? "활성" : "비활성"}</p>
-      <p><code>${service.id}</code></p>
-      <div class="list-item-actions">
-        <button type="button" data-action="edit-service" data-id="${service.id}">수정</button>
-      </div>
-    </article>
-  `).join("") || `<article class="list-item"><p>서비스가 없습니다.</p></article>`;
+  renderServicePage();
 
   const serviceOptions = services.map((service) =>
     `<option value="${service.id}">${service.name} / ${service.durationMinutes}분</option>`
@@ -312,6 +491,7 @@ async function refreshServices() {
   el.reservationService.innerHTML = serviceOptions;
   el.editReservationService.innerHTML = serviceOptions;
   el.dmMessageService.innerHTML = serviceOptions;
+  renderDashboard();
 }
 
 async function refreshReservations() {
@@ -329,7 +509,82 @@ async function refreshReservations() {
   const query = params.toString() ? `?${params.toString()}` : "";
   const reservations = await api(`/api/reservations${query}`);
   state.reservations = reservations;
-  el.reservationList.innerHTML = reservations.map((reservation) => `
+  renderReservationPage();
+  renderDashboard();
+}
+
+async function refreshDmMessages() {
+  const query = el.dmStatusFilter.value ? `?status=${encodeURIComponent(el.dmStatusFilter.value)}` : "";
+  const messages = await api(`/api/dm/messages${query}`);
+  state.dmMessages = messages;
+  renderDmSummary(messages);
+  renderDmMessagePage();
+  renderDashboard();
+}
+
+function renderCustomerPage() {
+  const totalPages = Math.max(1, Math.ceil(state.customers.length / state.listPageSize));
+  state.customerPage = Math.min(state.customerPage, totalPages);
+  state.customerPage = Math.max(state.customerPage, 1);
+
+  const start = (state.customerPage - 1) * state.listPageSize;
+  const pagedCustomers = state.customers.slice(start, start + state.listPageSize);
+
+  el.customerList.innerHTML = pagedCustomers.map((customer) => `
+    <article class="list-item">
+      <strong>${customer.name}</strong>
+      <p>${customer.phone || "-"}</p>
+      <p>${customer.email || "-"}</p>
+      <p>${customer.memo || "-"}</p>
+      <p><code>${customer.id}</code></p>
+      <div class="list-item-actions">
+        <button type="button" data-action="edit-customer" data-id="${customer.id}">수정</button>
+      </div>
+    </article>
+  `).join("") || `<article class="list-item"><p>고객이 없습니다.</p></article>`;
+
+  if (el.customerCountLabel) {
+    el.customerCountLabel.textContent = `총 ${state.customers.length}명`;
+  }
+  renderNumberPagination(el.customerPagination, totalPages, state.customerPage, "customer-page");
+}
+
+function renderServicePage() {
+  const totalPages = Math.max(1, Math.ceil(state.services.length / state.listPageSize));
+  state.servicePage = Math.min(state.servicePage, totalPages);
+  state.servicePage = Math.max(state.servicePage, 1);
+
+  const start = (state.servicePage - 1) * state.listPageSize;
+  const pagedServices = state.services.slice(start, start + state.listPageSize);
+
+  el.serviceList.innerHTML = pagedServices.map((service) => `
+    <article class="list-item">
+      <strong>${service.name}</strong>
+      <p>${service.durationMinutes}분 / ${service.price.toLocaleString()}원</p>
+      <p>${service.active ? "활성" : "비활성"}</p>
+      <p><code>${service.id}</code></p>
+      <div class="list-item-actions">
+        <button type="button" data-action="edit-service" data-id="${service.id}">수정</button>
+      </div>
+    </article>
+  `).join("") || `<article class="list-item"><p>서비스가 없습니다.</p></article>`;
+
+  if (el.serviceCountLabel) {
+    el.serviceCountLabel.textContent = `총 ${state.services.length}개`;
+  }
+  renderNumberPagination(el.servicePagination, totalPages, state.servicePage, "service-page");
+}
+
+function renderReservationPage() {
+  const visibleReservations = getVisibleReservations();
+  const totalPages = Math.max(1, Math.ceil(visibleReservations.length / state.listPageSize));
+  state.reservationPage = Math.min(state.reservationPage, totalPages);
+  state.reservationPage = Math.max(state.reservationPage, 1);
+
+  const start = (state.reservationPage - 1) * state.listPageSize;
+  const pagedReservations = visibleReservations.slice(start, start + state.listPageSize);
+
+  el.reservationList.innerHTML = pagedReservations.map((reservation) => `
     <article class="list-item">
       <strong>${reservation.startAt} ~ ${reservation.endAt}</strong>
       <p>상태: ${reservation.status}</p>
@@ -342,14 +597,171 @@ async function refreshReservations() {
         <button type="button" data-action="edit-reservation" data-id="${reservation.id}">상세/수정</button>
       </div>
     </article>
-  `).join("") || `<article class="list-item"><p>예약이 없습니다.</p></article>`;
+  `).join("") || `<article class="list-item"><p>${state.selectedReservationDateKey ? "선택한 날짜에 예약이 없습니다." : "예약이 없습니다."}</p></article>`;
+
+  if (el.reservationCountLabel) {
+    el.reservationCountLabel.textContent = state.selectedReservationDateKey
+      ? `${formatDateKeyLabel(state.selectedReservationDateKey)} · 총 ${visibleReservations.length}건`
+      : `총 ${visibleReservations.length}건`;
+  }
+  renderNumberPagination(el.reservationPagination, totalPages, state.reservationPage, "reservation-page");
+  renderReservationCalendar();
 }
 
-async function refreshDmMessages() {
-  const query = el.dmStatusFilter.value ? `?status=${encodeURIComponent(el.dmStatusFilter.value)}` : "";
-  const messages = await api(`/api/dm/messages${query}`);
-  state.dmMessages = messages;
-  el.dmMessageList.innerHTML = messages.map(renderDmMessageCard).join("") || `<article class="list-item"><p>DM 메시지가 없습니다.</p></article>`;
+function renderReservationCalendar() {
+  if (!el.reservationCalendarGrid) {
+    return;
+  }
+
+  const monthStart = new Date(
+    state.reservationCalendarMonth.getFullYear(),
+    state.reservationCalendarMonth.getMonth(),
+    1
+  );
+  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+  const firstWeekday = monthStart.getDay();
+  const totalDays = monthEnd.getDate();
+  const reservationDateKeys = new Set(
+    state.reservations
+      .filter((reservation) => !reservation.canceledAt)
+      .map((reservation) => getDateKey(reservation.startAt))
+  );
+  const reservationCountByDate = state.reservations
+    .filter((reservation) => !reservation.canceledAt)
+    .reduce((accumulator, reservation) => {
+      const dateKey = getDateKey(reservation.startAt);
+      accumulator[dateKey] = (accumulator[dateKey] || 0) + 1;
+      return accumulator;
+    }, {});
+
+  if (!state.selectedReservationDateKey) {
+    const todayKey = getDateKey(new Date());
+    state.selectedReservationDateKey = reservationDateKeys.has(todayKey) ? todayKey : "";
+  }
+  if (state.selectedReservationDateKey) {
+    syncReservationFiltersFromCalendar();
+  } else {
+    clearReservationDateFilters();
+  }
+
+  el.reservationCalendarLabel.textContent = `${monthStart.getFullYear()}년 ${monthStart.getMonth() + 1}월`;
+
+  const cells = [];
+  for (let index = 0; index < firstWeekday; index += 1) {
+    cells.push(`<span class="calendar-cell empty" aria-hidden="true"></span>`);
+  }
+
+  for (let day = 1; day <= totalDays; day += 1) {
+    const current = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
+    const dateKey = getDateKey(current);
+    const hasReservation = reservationDateKeys.has(dateKey);
+    const reservationCount = reservationCountByDate[dateKey] || 0;
+    const isSelected = state.selectedReservationDateKey === dateKey;
+    const isCurrentDay = getDateKey(new Date()) === dateKey;
+    cells.push(`
+      <button
+        type="button"
+        class="calendar-cell ${hasReservation ? "has-reservation" : ""} ${isSelected ? "selected" : ""} ${isCurrentDay ? "today" : ""}"
+        data-action="select-calendar-day"
+        data-date-key="${dateKey}">
+        <span class="calendar-day-number">${day}</span>
+        ${hasReservation ? `<span class="calendar-count">${reservationCount}건</span><span class="calendar-dot" aria-hidden="true"></span>` : ""}
+      </button>
+    `);
+  }
+
+  el.reservationCalendarGrid.innerHTML = cells.join("");
+
+  const selectedReservations = state.selectedReservationDateKey
+    ? getReservationsForDateKey(state.selectedReservationDateKey)
+    : [];
+  el.reservationCalendarDetailTitle.textContent = state.selectedReservationDateKey
+    ? `${formatDateKeyLabel(state.selectedReservationDateKey)} 예약`
+    : "날짜를 선택하면 예약이 표시됩니다";
+  el.reservationCalendarDayList.innerHTML = selectedReservations.length
+    ? selectedReservations.map((reservation) => `
+      <article class="list-item compact-list-item">
+        <div class="calendar-reservation-head">
+          <strong>${escapeHtml(findCustomerName(reservation.customerId))}</strong>
+          <span class="status-chip ${getReservationStatusTone(reservation.status)}">${escapeHtml(reservation.status || "PENDING")}</span>
+        </div>
+        <p><span class="service-tag ${getServiceToneClass(reservation.serviceId)}">${escapeHtml(findServiceName(reservation.serviceId))}</span></p>
+        <p>${escapeHtml(formatShortDateTime(reservation.startAt))} ~ ${escapeHtml(formatShortDateTime(reservation.endAt))}</p>
+        <p>${escapeHtml(reservation.notes || reservation.status || "-")}</p>
+      </article>
+    `).join("")
+    : createEmptyListItem(state.selectedReservationDateKey ? "이 날짜에는 예약이 없습니다." : "예약이 있는 날짜를 선택해 주세요.");
+}
+
+function renderDmMessagePage() {
+  const totalPages = Math.max(1, Math.ceil(state.dmMessages.length / state.dmPageSize));
+  state.dmPage = Math.min(state.dmPage, totalPages);
+  state.dmPage = Math.max(state.dmPage, 1);
+
+  const start = (state.dmPage - 1) * state.dmPageSize;
+  const pagedMessages = state.dmMessages.slice(start, start + state.dmPageSize);
+
+  el.dmMessageList.innerHTML = pagedMessages.map(renderDmMessageCard).join("")
+    || `<article class="list-item"><p>DM 메시지가 없습니다.</p></article>`;
+
+  if (el.dmCountLabel) {
+    el.dmCountLabel.textContent = `현재 ${state.dmMessages.length}건`;
+  }
+  renderNumberPagination(el.dmPagination, totalPages, state.dmPage, "dm-page");
+}
+
+function renderNumberPagination(container, totalPages, currentPage, action) {
+  if (!container) {
+    return;
+  }
+  if (totalPages <= 1) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const buttons = Array.from({ length: totalPages }, (_, index) => {
+    const page = index + 1;
+    const active = page === currentPage ? "active" : "";
+    return `<button type="button" class="pagination-btn ${active}" data-action="${action}" data-page="${page}">${page}</button>`;
+  }).join("");
+
+  container.innerHTML = buttons;
+}
+
+function renderDmSummary(messages) {
+  const total = messages.length;
+  const received = messages.filter((message) => message.status === "RECEIVED").length;
+  const review = messages.filter((message) => message.status === "NEEDS_REVIEW").length;
+  const reserved = messages.filter((message) => message.status === "RESERVED").length;
+  const latest = messages[0];
+
+  el.dmSummaryCards.innerHTML = `
+    <article class="summary-card">
+      <span class="summary-label">전체 메시지</span>
+      <strong class="summary-value">${total}</strong>
+      <p class="summary-help">현재 필터 기준으로 보이는 전체 문의 수</p>
+    </article>
+    <article class="summary-card warning">
+      <span class="summary-label">검토 필요</span>
+      <strong class="summary-value">${review}</strong>
+      <p class="summary-help">운영 확인이 필요한 문의</p>
+    </article>
+    <article class="summary-card">
+      <span class="summary-label">신규 수신</span>
+      <strong class="summary-value">${received}</strong>
+      <p class="summary-help">아직 처리 전인 문의</p>
+    </article>
+    <article class="summary-card success">
+      <span class="summary-label">예약 완료</span>
+      <strong class="summary-value">${reserved}</strong>
+      <p class="summary-help">자동 또는 수동 확정 완료</p>
+    </article>
+    <article class="summary-card latest">
+      <span class="summary-label">최근 수신</span>
+      <strong class="summary-value">${escapeHtml(latest ? (latest.senderName || latest.senderPhone || latest.channel) : "-")}</strong>
+      <p class="summary-help">${escapeHtml(latest ? `${formatDateTime(latest.receivedAt)} · ${latest.messageText || "-"}` : "최근 수신 메시지가 없습니다.")}</p>
+    </article>
+  `;
 }
 
 function escapeHtml(value) {
@@ -370,6 +782,251 @@ function formatDateTime(value) {
   } catch {
     return value;
   }
+}
+
+function formatShortDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+  try {
+    return new Date(value).toLocaleString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return value;
+  }
+}
+
+function isToday(value) {
+  if (!value) {
+    return false;
+  }
+  const today = new Date();
+  const target = new Date(value);
+  return today.getFullYear() === target.getFullYear()
+    && today.getMonth() === target.getMonth()
+    && today.getDate() === target.getDate();
+}
+
+function getDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateKeyLabel(dateKey) {
+  if (!dateKey) {
+    return "날짜를 선택해 주세요";
+  }
+  try {
+    return new Date(`${dateKey}T00:00:00`).toLocaleDateString("ko-KR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+    });
+  } catch {
+    return dateKey;
+  }
+}
+
+function getReservationsForDateKey(dateKey) {
+  return state.reservations
+    .filter((reservation) => !reservation.canceledAt && getDateKey(reservation.startAt) === dateKey)
+    .sort((left, right) => new Date(left.startAt) - new Date(right.startAt));
+}
+
+function getServiceToneClass(serviceId) {
+  if (!serviceId) {
+    return "service-tone-1";
+  }
+  const serviceIndex = state.services.findIndex((service) => service.id === serviceId);
+  const normalizedIndex = serviceIndex >= 0 ? serviceIndex : 0;
+  return `service-tone-${(normalizedIndex % 4) + 1}`;
+}
+
+function toLocalDateTimeInput(date) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function getReservationStatusTone(status) {
+  switch (status) {
+    case "CONFIRMED":
+    case "RESERVED":
+      return "success";
+    case "CANCELED":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function syncReservationFormFromCalendar() {
+  if (!state.selectedReservationDateKey) {
+    if (el.reservationFormDateHint) {
+      el.reservationFormDateHint.textContent = "날짜를 선택하면 기본 시간이 자동으로 채워집니다.";
+    }
+    return;
+  }
+  const reservationForm = document.getElementById("reservationForm");
+  if (!reservationForm) {
+    return;
+  }
+
+  const startInput = reservationForm.querySelector("input[name='startAt']");
+  const endInput = reservationForm.querySelector("input[name='endAt']");
+  const serviceSelect = reservationForm.querySelector("select[name='serviceId']");
+  if (!startInput || !endInput) {
+    return;
+  }
+
+  const startDate = new Date(`${state.selectedReservationDateKey}T09:00:00`);
+  const selectedServiceId = serviceSelect?.value || "";
+  const durationMinutes = getServiceDuration(selectedServiceId) || 60;
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+
+  startInput.value = toLocalDateTimeInput(startDate);
+  endInput.value = toLocalDateTimeInput(endDate);
+  if (el.reservationFormDateHint) {
+    el.reservationFormDateHint.textContent = `${formatDateKeyLabel(state.selectedReservationDateKey)} 기준으로 기본 예약 시간이 채워졌습니다.`;
+  }
+}
+
+function syncReservationFiltersFromCalendar() {
+  if (!state.selectedReservationDateKey) {
+    return;
+  }
+  el.reservationStartFilter.value = `${state.selectedReservationDateKey}T00:00`;
+  el.reservationEndFilter.value = `${state.selectedReservationDateKey}T23:59`;
+}
+
+function clearReservationDateFilters() {
+  el.reservationStartFilter.value = "";
+  el.reservationEndFilter.value = "";
+}
+
+function getVisibleReservations() {
+  if (!state.selectedReservationDateKey) {
+    return state.reservations;
+  }
+  return state.reservations.filter((reservation) => getDateKey(reservation.startAt) === state.selectedReservationDateKey);
+}
+
+function createEmptyListItem(message) {
+  return `<article class="list-item compact-list-item"><p>${escapeHtml(message)}</p></article>`;
+}
+
+function renderDashboardReservationItem(reservation, label) {
+  return `
+    <article class="list-item compact-list-item">
+      <strong>${escapeHtml(findCustomerName(reservation.customerId))}</strong>
+      <p>${escapeHtml(findServiceName(reservation.serviceId))}</p>
+      <p>${escapeHtml(formatShortDateTime(reservation.startAt))} ~ ${escapeHtml(formatShortDateTime(reservation.endAt))}</p>
+      <p>${escapeHtml(label)}</p>
+    </article>
+  `;
+}
+
+function renderDashboard() {
+  if (!el.dashboardStats) {
+    return;
+  }
+
+  const currentOrg = getCurrentOrganization();
+  const activeReservations = state.reservations.filter((reservation) => !reservation.canceledAt);
+  const todayReservations = activeReservations
+    .filter((reservation) => isToday(reservation.startAt))
+    .sort((left, right) => new Date(left.startAt) - new Date(right.startAt));
+  const recentReservations = [...activeReservations]
+    .sort((left, right) => new Date(right.startAt) - new Date(left.startAt))
+    .slice(0, 4);
+  const reviewDmCount = state.dmMessages.filter((message) => message.status === "NEEDS_REVIEW").length;
+  const receivedDmCount = state.dmMessages.filter((message) => message.status === "RECEIVED").length;
+  const activeChannels = state.channels.filter((channel) => channel.status === "ACTIVE").length;
+  const latestDm = state.dmMessages[0];
+
+  if (el.heroBadge) {
+    el.heroBadge.innerHTML = `
+      <p class="eyebrow">오늘 요약</p>
+      <strong>${escapeHtml(currentOrg?.name || state.user?.name || "워크스페이스")}</strong>
+      <p>오늘 예약 ${todayReservations.length}건</p>
+      <p>검토 필요 DM ${reviewDmCount}건</p>
+    `;
+  }
+
+  el.dashboardStats.innerHTML = `
+    <article class="dashboard-stat-card">
+      <span class="summary-label">오늘 예약</span>
+      <strong class="summary-value">${todayReservations.length}</strong>
+      <p class="summary-help">오늘 일정에 잡힌 예약 수</p>
+    </article>
+    <article class="dashboard-stat-card">
+      <span class="summary-label">고객</span>
+      <strong class="summary-value">${state.customers.length}</strong>
+      <p class="summary-help">현재 워크스페이스 고객 수</p>
+    </article>
+    <article class="dashboard-stat-card warning">
+      <span class="summary-label">검토 필요 DM</span>
+      <strong class="summary-value">${reviewDmCount}</strong>
+      <p class="summary-help">운영 확인이 필요한 문의</p>
+    </article>
+    <article class="dashboard-stat-card success">
+      <span class="summary-label">연결 채널</span>
+      <strong class="summary-value">${activeChannels}</strong>
+      <p class="summary-help">현재 연결된 채널 수</p>
+    </article>
+  `;
+
+  el.dashboardRecentReservations.innerHTML = recentReservations.length
+    ? recentReservations.map((reservation) =>
+      renderDashboardReservationItem(reservation, reservation.notes || "가장 최근에 등록된 예약")
+    ).join("")
+    : createEmptyListItem("최근 예약이 없습니다.");
+
+  el.dashboardTodayReservations.innerHTML = todayReservations.length
+    ? todayReservations.slice(0, 5).map((reservation) =>
+      renderDashboardReservationItem(reservation, reservation.status === "CONFIRMED" ? "확정됨" : reservation.status || "진행 예정")
+    ).join("")
+    : createEmptyListItem("오늘 일정이 없습니다.");
+
+  el.dashboardDmSummary.innerHTML = `
+    <article class="summary-card ${reviewDmCount ? "warning" : ""}">
+      <span class="summary-label">검토 필요</span>
+      <strong class="summary-value">${reviewDmCount}</strong>
+      <p class="summary-help">운영 확인이 필요한 문의</p>
+    </article>
+    <article class="summary-card">
+      <span class="summary-label">신규 수신</span>
+      <strong class="summary-value">${receivedDmCount}</strong>
+      <p class="summary-help">아직 처리 전인 문의</p>
+    </article>
+    <article class="summary-card latest">
+      <span class="summary-label">최근 문의</span>
+      <strong class="summary-value">${escapeHtml(latestDm ? (latestDm.senderName || latestDm.senderPhone || "채널 사용자") : "-")}</strong>
+      <p class="summary-help">${escapeHtml(latestDm ? `${formatShortDateTime(latestDm.receivedAt)} · ${latestDm.messageText || "-"}` : "최근 문의가 없습니다.")}</p>
+    </article>
+  `;
+
+  el.dashboardChannelStatus.innerHTML = state.channels.length
+    ? state.channels.map((channel) => `
+      <article class="list-item compact-list-item">
+        <div class="channel-head">
+          <strong>${escapeHtml(channel.accountName || channel.provider)}</strong>
+          <span class="status-chip ${getChannelModeTone(channel.sendMode)}">${getChannelModeLabel(channel.sendMode)}</span>
+        </div>
+        <p>${escapeHtml(channel.provider)} · ${escapeHtml(channel.status)}</p>
+        <p>${escapeHtml(channel.username || channel.externalAccountId || "-")}</p>
+      </article>
+    `).join("")
+    : createEmptyListItem("연결된 채널이 없습니다.");
 }
 
 function getDmStatusTone(status) {
@@ -401,7 +1058,7 @@ function renderDmMessageCard(message) {
   return `
     <article class="list-item dm-message-item">
       <div class="dm-message-head">
-        <span class="status-chip ${getDmStatusTone(message.status)}">${escapeHtml(message.status)}</span>
+        <span class="status-chip ${getDmStatusTone(message.status)}">${escapeHtml(getDmStatusLabel(message.status))}</span>
         <span class="dm-message-channel">${escapeHtml(message.channel)} · ${escapeHtml(message.intent || "BOOK")}</span>
       </div>
       <strong class="dm-message-sender">${escapeHtml(senderSummary)}</strong>
@@ -979,8 +1636,10 @@ async function syncInstagramChannel(channelId) {
   }
 }
 
-document.getElementById("registerForm").addEventListener("submit", async (event) => {
+el.registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  setFormFeedback(el.registerFeedback);
+  setFormPending(el.registerForm, true, "계정 만드는 중...");
   try {
     const payload = formToJson(event.target);
     const result = await api("/api/auth/register", {
@@ -988,15 +1647,22 @@ document.getElementById("registerForm").addEventListener("submit", async (event)
       body: JSON.stringify(payload),
     });
     saveSession(result);
+    setFormFeedback(el.registerFeedback, "계정이 만들어졌습니다. 워크스페이스로 이동합니다.", "success");
     await bootstrapData();
     log("회원가입 성공", result.user);
   } catch (error) {
+    setFormFeedback(el.registerFeedback, error.message || "회원가입에 실패했습니다. 입력 정보를 다시 확인해 주세요.", "error");
+    event.target.querySelector("input[name='email']")?.focus();
     log("회원가입 실패", error);
+  } finally {
+    setFormPending(el.registerForm, false);
   }
 });
 
-document.getElementById("loginForm").addEventListener("submit", async (event) => {
+el.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  setFormFeedback(el.loginFeedback);
+  setFormPending(el.loginForm, true, "로그인 중...");
   try {
     const payload = formToJson(event.target);
     const result = await api("/api/auth/login", {
@@ -1004,10 +1670,16 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
       body: JSON.stringify(payload),
     });
     saveSession(result);
+    syncRememberedEmail(payload.email);
+    setFormFeedback(el.loginFeedback, "로그인되었습니다. 워크스페이스로 이동합니다.", "success");
     await bootstrapData();
     log("로그인 성공", result.user);
   } catch (error) {
+    setFormFeedback(el.loginFeedback, error.message || "로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.", "error");
+    event.target.querySelector("input[name='password']")?.focus();
     log("로그인 실패", error);
+  } finally {
+    setFormPending(el.loginForm, false);
   }
 });
 
@@ -1024,6 +1696,8 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
     }
   } finally {
     clearSession();
+    setFormFeedback(el.registerFeedback);
+    setFormFeedback(el.loginFeedback);
     el.customerList.innerHTML = "";
     el.serviceList.innerHTML = "";
     el.reservationList.innerHTML = "";
@@ -1095,7 +1769,74 @@ document.getElementById("refreshReservationsBtn").addEventListener("click", () =
 el.refreshChannelsBtn.addEventListener("click", () => refreshChannels().catch((error) => log("채널 새로고침 실패", error)));
 el.startInstagramConnectBtn.addEventListener("click", startInstagramConnect);
 el.refreshDmMessagesBtn.addEventListener("click", () => refreshDmMessages().catch((error) => log("DM 새로고침 실패", error)));
-el.dmStatusFilter.addEventListener("change", () => refreshDmMessages().catch((error) => log("DM 새로고침 실패", error)));
+el.dmStatusFilter.addEventListener("change", () => {
+  state.dmPage = 1;
+  refreshDmMessages().catch((error) => log("DM 새로고침 실패", error));
+});
+el.customerPagination.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='customer-page']");
+  if (!button) {
+    return;
+  }
+  state.customerPage = Number(button.dataset.page);
+  renderCustomerPage();
+});
+el.servicePagination.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='service-page']");
+  if (!button) {
+    return;
+  }
+  state.servicePage = Number(button.dataset.page);
+  renderServicePage();
+});
+el.reservationPagination.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='reservation-page']");
+  if (!button) {
+    return;
+  }
+  state.reservationPage = Number(button.dataset.page);
+  renderReservationPage();
+});
+el.reservationCalendarPrevBtn.addEventListener("click", () => {
+  state.reservationCalendarMonth = new Date(
+    state.reservationCalendarMonth.getFullYear(),
+    state.reservationCalendarMonth.getMonth() - 1,
+    1
+  );
+  renderReservationCalendar();
+});
+el.reservationCalendarNextBtn.addEventListener("click", () => {
+  state.reservationCalendarMonth = new Date(
+    state.reservationCalendarMonth.getFullYear(),
+    state.reservationCalendarMonth.getMonth() + 1,
+    1
+  );
+  renderReservationCalendar();
+});
+el.reservationCalendarGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='select-calendar-day']");
+  if (!button) {
+    return;
+  }
+  state.selectedReservationDateKey = state.selectedReservationDateKey === button.dataset.dateKey ? "" : button.dataset.dateKey;
+  state.reservationPage = 1;
+  if (state.selectedReservationDateKey) {
+    syncReservationFiltersFromCalendar();
+    syncReservationFormFromCalendar();
+  } else {
+    clearReservationDateFilters();
+  }
+  renderReservationPage();
+  renderReservationCalendar();
+});
+el.dmPagination.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action='dm-page']");
+  if (!button) {
+    return;
+  }
+  state.dmPage = Number(button.dataset.page);
+  renderDmMessagePage();
+});
 el.refreshOrgsBtn.addEventListener("click", () => refreshOrgs().catch((error) => log("조직 새로고침 실패", error)));
 el.orgForm.addEventListener("submit", createOrganization);
 el.dmForm.addEventListener("submit", submitDmReservation);
@@ -1121,8 +1862,16 @@ el.orgList.addEventListener("click", (event) => {
   }
 });
 el.includeCanceled.addEventListener("change", () => refreshReservations().catch((error) => log("예약 새로고침 실패", error)));
-el.reservationStartFilter.addEventListener("change", () => refreshReservations().catch((error) => log("예약 새로고침 실패", error)));
-el.reservationEndFilter.addEventListener("change", () => refreshReservations().catch((error) => log("예약 새로고침 실패", error)));
+el.reservationStartFilter.addEventListener("change", () => {
+  state.selectedReservationDateKey = "";
+  state.reservationPage = 1;
+  refreshReservations().catch((error) => log("예약 새로고침 실패", error));
+});
+el.reservationEndFilter.addEventListener("change", () => {
+  state.selectedReservationDateKey = "";
+  state.reservationPage = 1;
+  refreshReservations().catch((error) => log("예약 새로고침 실패", error));
+});
 el.closeReservationDialogBtn.addEventListener("click", () => el.reservationDialog.close());
 el.cancelReservationBtn.addEventListener("click", () => cancelReservation());
 el.restoreReservationBtn.addEventListener("click", () => restoreReservation());
@@ -1177,9 +1926,15 @@ el.channelList.addEventListener("click", (event) => {
   }
   disconnectChannel(button.dataset.id);
 });
+el.openPasswordResetBtn.addEventListener("click", openPasswordResetDialog);
+el.closePasswordResetDialogBtn.addEventListener("click", closePasswordResetDialog);
+el.passwordResetForm.addEventListener("submit", submitPasswordResetRequest);
 
 renderSession();
 wireTabs();
+wirePasswordToggles();
+wireAuthFieldFlow();
+hydrateRememberedEmail();
 bootstrapData().catch((error) => log("초기 데이터 로드 실패", error));
 window.addEventListener("focus", () => {
   if (state.token) {

@@ -48,4 +48,20 @@ public class AuthController {
         var resp = auth.register(req);
         return ResponseEntity.status(201).body(resp);
     }
+
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<PasswordResetRequestResponse> requestPasswordReset(@RequestBody @Valid PasswordResetRequest req) {
+        return ResponseEntity.ok(auth.requestPasswordReset(req));
+    }
+
+    @GetMapping("/password-reset/validate")
+    public ResponseEntity<PasswordResetValidateResponse> validatePasswordReset(@RequestParam String token) {
+        return ResponseEntity.ok(auth.validatePasswordResetToken(token));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<?> confirmPasswordReset(@RequestBody @Valid PasswordResetConfirmRequest req) {
+        auth.confirmPasswordReset(req);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -52,7 +52,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/index.html", "/app.css", "/app.js", "/favicon.ico").permitAll()
+                        .requestMatchers("/", "/index.html", "/reset-password.html", "/app.css", "/app.js", "/reset-password.js", "/favicon.ico").permitAll()
                         .requestMatchers("/legal/**").permitAll()
                         .requestMatchers("/ping-db").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
